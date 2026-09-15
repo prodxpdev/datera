@@ -85,3 +85,165 @@ export function referencedTables(sql: string, tableNames: readonly string[]): re
 
   return found;
 }
+
+export type CompletionKind = 'table' | 'column' | 'keyword' | 'join';
+
+export interface CompletionItem {
+  readonly label: string;
+  readonly kind: CompletionKind;
+  /** Type, dictionary meaning, or which table a column came from. */
+  readonly detail: string;
+  /** What to insert, when it differs from the label (join conditions). */
+  readonly insert: string;
+}
+
+export interface CompletionResult {
+  /** The partial word the items replace, so the editor knows what to overwrite. */
+  readonly replacing: string;
+  readonly items: readonly CompletionItem[];
+}
+
+const EMPTY: CompletionResult = { replacing: '', items: [] };
+
+const KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'JOIN',
+  'LEFT JOIN', 'INNER JOIN', 'ON', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN',
+  'MAX', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AND', 'OR', 'NOT', 'NULL', 'BETWEEN',
+  'IN', 'LIKE', 'ASC', 'DESC', 'WITH', 'UNION', 'EXPLAIN',
+];
+
+/**
+ * What could come next at `cursor`, from the schema alone.
+ *
+ * No model. Completing a column name is a lookup, not a judgement — the answer is sitting
+ * in the graph, exact and free. Asking a model would be slower, occasionally wrong, and on
+ * the local tier would spend forty-five seconds suggesting a word the user already
+ * half-typed. It also means the editor keeps working with no key configured and no
+ * network, which is the point of the product.
+ */
+export function completionsAt(graph: SchemaGraph, sql: string, cursor: number): CompletionResult {
+  const before = sql.slice(0, cursor);
+  if (insideStringLiteral(before)) return EMPTY;
+
+  const word = /[\w$]*$/.exec(before)?.[0] ?? '';
+  const prefix = before.slice(0, before.length - word.length);
+
+  // `alias.` or `table.` — only that table's columns, and nothing else.
+  const qualifier = /([\w$]+|"[^"]+")\s*\.\s*$/.exec(prefix);
+  if (qualifier !== null) {
+    const table = resolveQualifier(graph, sql, unquote(qualifier[1]!));
+    if (table === undefined) return { replacing: word, items: [] };
+    return { replacing: word, items: table.columns.map(columnItem(table)).filter(matches(word)) };
+  }
+
+  const clause = lastKeyword(prefix);
+
+  if (clause === 'FROM' || clause === 'JOIN') {
+    return {
+      replacing: word,
+      items: graph.tables.map(tableItem).filter(matches(word)),
+    };
+  }
+
+  if (clause === 'ON') {
+    const joins = joinConditions(graph, sql).filter(matches(word));
+    if (joins.length > 0) return { replacing: word, items: joins };
+  }
+
+  // Everywhere else: the columns of the tables this query has actually named, then
+  // keywords. Offering every column in the dataset would bury the five that can be typed
+  // here under the forty that cannot.
+  const inScope = tablesInScope(graph, sql);
+  const items = [
+    ...inScope.flatMap((t) => t.columns.map(columnItem(t))),
+    ...KEYWORDS.map((k): CompletionItem => ({ label: k, kind: 'keyword', detail: '', insert: k })),
+  ];
+
+  return { replacing: word, items: items.filter(matches(word)) };
+}
+
+function matches(word: string): (item: CompletionItem) => boolean {
+  if (word.length === 0) return () => true;
+  const lower = word.toLowerCase();
+  return (item) => item.label.toLowerCase().startsWith(lower);
+}
+
+function tableItem(table: GraphTable): CompletionItem {
+  const hidden = table.hiddenColumns > 0 ? `, ${table.hiddenColumns} hidden` : '';
+  return {
+    label: table.name,
+    kind: 'table',
+    detail: `${table.rowCount.toLocaleString()} rows · ${table.columns.length} columns${hidden}`,
+    insert: quoteIfNeeded(table.name),
+  };
+}
+
+function columnItem(table: GraphTable): (column: GraphColumn) => CompletionItem {
+  return (column) => ({
+    label: column.name,
+    kind: 'column',
+    // The confirmed meaning first when there is one: it is the thing that stops
+    // `revenue_cents` being summed as if it were dollars.
+    detail: column.meaning.length > 0
+      ? `${column.meaning} · ${column.type} · ${table.name}`
+      : `${column.type} · ${table.name}`,
+    insert: quoteIfNeeded(column.name),
+  });
+}
+
+/**
+ * Confirmed relationships between the tables this query names, as ready-made conditions.
+ * After ON, the join a human already ratified is the suggestion worth making.
+ */
+function joinConditions(graph: SchemaGraph, sql: string): CompletionItem[] {
+  const named = new Set(tablesInScope(graph, sql).map((t) => t.name.toLowerCase()));
+
+  return graph.relationships
+    .filter((r) => named.has(r.fromTable.toLowerCase()) && named.has(r.toTable.toLowerCase()))
+    .map((r) => {
+      const text = `${r.fromTable}.${r.fromColumn} = ${r.toTable}.${r.toColumn}`;
+      return { label: text, kind: 'join' as const, detail: 'confirmed relationship', insert: text };
+    });
+}
+
+function tablesInScope(graph: SchemaGraph, sql: string): GraphTable[] {
+  const names = referencedTables(sql, graph.tables.map((t) => t.name));
+  return graph.tables.filter((t) => names.includes(t.name));
+}
+
+/**
+ * Which table a qualifier refers to — either its own name, or an alias bound by
+ * `FROM t alias` / `JOIN t AS alias`.
+ */
+function resolveQualifier(graph: SchemaGraph, sql: string, qualifier: string): GraphTable | undefined {
+  const direct = graph.tables.find((t) => t.name.toLowerCase() === qualifier.toLowerCase());
+  if (direct !== undefined) return direct;
+
+  const bindings = /\b(?:FROM|JOIN)\s+("[^"]+"|[\w$]+)(?:\s+AS)?\s+("[^"]+"|[\w$]+)/gi;
+  for (const match of sql.matchAll(bindings)) {
+    const alias = unquote(match[2]!);
+    if (alias.toLowerCase() !== qualifier.toLowerCase()) continue;
+    // `FROM orders WHERE` binds no alias — `WHERE` is a keyword, not a name.
+    if (KEYWORDS.includes(alias.toUpperCase())) continue;
+    const table = unquote(match[1]!);
+    return graph.tables.find((t) => t.name.toLowerCase() === table.toLowerCase());
+  }
+  return undefined;
+}
+
+/** The clause keyword governing the cursor, if the cursor sits directly after one. */
+function lastKeyword(prefix: string): string | undefined {
+  const trailing = /(?:^|[\s(,])([A-Za-z]+)\s+$/.exec(prefix);
+  if (trailing === null) return undefined;
+  const word = trailing[1]!.toUpperCase();
+  return word === 'FROM' || word === 'JOIN' || word === 'ON' ? word : undefined;
+}
+
+/** An odd number of unescaped quotes before the cursor means we are inside a literal. */
+function insideStringLiteral(before: string): boolean {
+  return (before.replace(/''/g, '').match(/'/g) ?? []).length % 2 === 1;
+}
+
+function unquote(name: string): string {
+  return name.startsWith('"') ? name.slice(1, -1).replace(/""/g, '"') : name;
+}

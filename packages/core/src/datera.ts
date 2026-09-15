@@ -97,8 +97,10 @@ import {
   OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel, type EmbeddingModel,
 } from './models/embeddings.js';
 import { draftDictionary } from './dictionary/draft.js';
+import type { GraphTable, SchemaGraph } from './query/schema-graph.js';
 import {
   UNDEFINED_ENTITY,
+  confirmedOnly,
   type ColumnDefinition,
   type EntityDefinition,
   type SourceDictionary,
@@ -2461,6 +2463,63 @@ export class Datera {
    * source id, and requiring one would reintroduce exactly the "every dataset comes from
    * a file" coupling that §3a exists to prevent.
    */
+  /**
+   * The dataset's shape in one structure: tables, columns, confirmed meanings, confirmed
+   * relationships.
+   *
+   * Deliberately filtered the same way the model context is (§1.4): a column the user
+   * marked sensitive is withheld here too, with only a count left behind. A picker that
+   * advertised a column the model is not allowed to see would leak the name the hiding
+   * was meant to protect, and would offer a completion that produces a query the user
+   * then has to explain to themselves.
+   */
+  async schemaGraph(datasetId: string): Promise<SchemaGraph> {
+    const dataset = await this.getDataset(datasetId);
+    const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
+    const relationships = await this.listRelationships(datasetId);
+
+    const keyed = new Set<string>();
+    for (const r of relationships) {
+      keyed.add(`${r.fromTable}.${r.fromColumn}`.toLowerCase());
+      keyed.add(`${r.toTable}.${r.toColumn}`.toLowerCase());
+    }
+
+    const tables: GraphTable[] = [];
+    for (const schema of schemas) {
+      const definitions = schema.sourceId === null
+        ? new Map<string, ColumnDefinition>()
+        : new Map(
+            confirmedOnly(await this.getDictionary(schema.sourceId)).columns.map((c) => [c.column, c]),
+          );
+
+      const visible = schema.columns.filter((c) => definitions.get(c.name)?.sensitivity !== 'hidden');
+
+      tables.push({
+        name: schema.sourceName,
+        rowCount: schema.rowCount,
+        hiddenColumns: schema.columns.length - visible.length,
+        columns: visible.map((c) => ({
+          name: c.name,
+          type: c.type,
+          isKey: keyed.has(`${schema.sourceName}.${c.name}`.toLowerCase()),
+          nullCount: c.nullCount,
+          meaning: definitions.get(c.name)?.meaning ?? '',
+        })),
+      });
+    }
+
+    return {
+      datasetId,
+      tables,
+      relationships: relationships.map((r) => ({
+        fromTable: r.fromTable,
+        fromColumn: r.fromColumn,
+        toTable: r.toTable,
+        toColumn: r.toColumn,
+      })),
+    };
+  }
+
   async describeTable(datasetId: string, tableName: string): Promise<SourceSchema> {
     const dataset = await this.getDataset(datasetId);
     return introspectRelation(this.engine, dataset.schemaName, tableName, datasetId);
