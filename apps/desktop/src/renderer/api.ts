@@ -39,6 +39,7 @@ const METHODS = [
   'listEnvironments', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
   'pushDataset', 'remoteQuery',
   'getLifecycle', 'setLifecycle', 'resetLifecycle',
+  'moveSource', 'renameDataset', 'deleteDataset', 'apiEndpoints',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {

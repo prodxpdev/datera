@@ -141,6 +141,8 @@ export type { WriteProposal, AppliedWrite, RowChange, WriteKind } from './writes
 export type { ToolDefinition, ToolSchema, ToolContext } from './serve/tools.js';
 export { toolsFor, toolSuffix } from './serve/tools.js';
 export type { ConnectConfig, ClientId } from './serve/configs.js';
+export { API_ENDPOINTS, apiEndpointsByGroup } from './serve/api-spec.js';
+export type { ApiEndpoint, ApiParameter } from './serve/api-spec.js';
 export type { TraceRecord, TraceQuery, RetentionPolicy, TraceOrigin } from './serve/trace-log.js';
 export { DEFAULT_RETENTION } from './serve/trace-log.js';
 export type { ToolResult } from './datera.js';
@@ -153,6 +155,7 @@ export type { RemoteQueryResult } from './environments/remote.js';
 
 // ----------------------------------------------------------- teaching (§11.9)
 export { DEFAULT_LIFECYCLE, validateLifecycle } from './teaching/lifecycle.js';
+export { deriveLifecycle } from './teaching/derive.js';
 export type { Lifecycle, LifecycleLayer, LifecycleTransform, LifecycleLane } from './teaching/lifecycle.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';

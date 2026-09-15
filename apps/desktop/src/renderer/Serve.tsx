@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ClientId, ConnectConfig, RetentionPolicy, ToolDefinition, TraceRecord } from '@datera/core';
+import type { ApiEndpoint, ClientId, ConnectConfig, RetentionPolicy, ToolDefinition, TraceRecord } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 
 /**
@@ -10,11 +10,12 @@ import type { DateraApi } from '../shared/contract.js';
  * is explicit that this must not become its own pillar, so there is no second UI language
  * here and no second query stack behind it.
  */
-type Tab = 'tools' | 'connect' | 'log';
+type Tab = 'tools' | 'connect' | 'api' | 'log';
 
 export function Serve({ api }: { readonly api: DateraApi }): JSX.Element {
   const [tab, setTab] = useState<Tab>('tools');
   const [tools, setTools] = useState<readonly ToolDefinition[]>([]);
+  const [endpoints, setEndpoints] = useState<readonly ApiEndpoint[]>([]);
   const [client, setClient] = useState<ClientId>('claude-desktop');
   const [config, setConfig] = useState<ConnectConfig | null>(null);
   const [records, setRecords] = useState<readonly TraceRecord[]>([]);
@@ -26,6 +27,7 @@ export function Serve({ api }: { readonly api: DateraApi }): JSX.Element {
 
   const refresh = useCallback(async () => {
     setTools(await api.listTools());
+    setEndpoints(await api.apiEndpoints());
     setConfig(await api.connectConfig(client));
     setRetention(await api.getTraceRetention());
     setCapture(await api.getTracePayloadCapture());
@@ -39,9 +41,9 @@ export function Serve({ api }: { readonly api: DateraApi }): JSX.Element {
   return (
     <div className="serve">
       <div className="subnav">
-        {(['tools', 'connect', 'log'] as const).map((t) => (
+        {(['tools', 'connect', 'api', 'log'] as const).map((t) => (
           <button key={t} data-serve={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-            {t === 'tools' ? 'Tools' : t === 'connect' ? 'Connect' : 'Traffic log'}
+            {t === 'tools' ? 'Tools' : t === 'connect' ? 'Connect' : t === 'api' ? 'API' : 'Traffic log'}
           </button>
         ))}
       </div>
@@ -86,6 +88,54 @@ export function Serve({ api }: { readonly api: DateraApi }): JSX.Element {
           </div>
           <pre className="cfg">{config.content}</pre>
           <div className="readonly">● {config.instructions}</div>
+        </>
+      )}
+
+      {tab === 'api' && (
+        <>
+          <p className="tierdesc">
+            The HTTP surface, served by <span className="mono">datera --http &lt;port&gt;</span>. This
+            page is generated from the same definition the server routes from, so it cannot drift
+            away from what actually runs — a test fails if an endpoint is served but undocumented,
+            or documented but not served.
+          </p>
+
+          {endpoints.map((endpoint) => (
+            <div className="apicard" key={`${endpoint.method}-${endpoint.path}`}>
+              <div className="apihead">
+                <span className={`verb ${endpoint.method.toLowerCase()}`}>{endpoint.method}</span>
+                <span className="apipath">{endpoint.path}</span>
+                {endpoint.requiresAuth ? (
+                  <span className="authbadge">token</span>
+                ) : (
+                  <span className="authbadge open">no auth</span>
+                )}
+                {endpoint.requiresFlag !== undefined && (
+                  <span className="flagbadge">needs {endpoint.requiresFlag}</span>
+                )}
+              </div>
+              <div className="apisummary">{endpoint.summary}</div>
+              <div className="apidesc">{endpoint.description}</div>
+
+              {endpoint.body.length > 0 && (
+                <table className="apiargs">
+                  <tbody>
+                    {endpoint.body.map((p) => (
+                      <tr key={p.name}>
+                        <td className="an">{p.name}</td>
+                        <td className="at">{p.type}</td>
+                        <td className="ar">{p.required ? 'required' : 'optional'}</td>
+                        <td>{p.description}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <div className="apireturns">returns <code>{endpoint.returns}</code></div>
+              <pre className="cfg">{endpoint.example}</pre>
+            </div>
+          ))}
         </>
       )}
 

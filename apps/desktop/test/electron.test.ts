@@ -113,6 +113,7 @@ describe('P1-18/P1-19 Electron shell', () => {
         'addEnvironment', 'environmentStatuses', 'listEnvironments', 'pushDataset',
         'remoteQuery', 'removeEnvironment',
         'getLifecycle', 'setLifecycle', 'resetLifecycle',
+        'moveSource', 'renameDataset', 'deleteDataset', 'apiEndpoints',
       ].sort(),
     );
   });

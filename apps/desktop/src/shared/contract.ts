@@ -13,6 +13,7 @@ import type {
   Environment,
   EnvironmentStatus,
   Lifecycle,
+  ApiEndpoint,
   AuthoredRelationship,
   ColumnDefinition,
   EntityDefinition,
@@ -100,6 +101,12 @@ export interface DateraApi {
   getLifecycle(): Promise<Lifecycle>;
   setLifecycle(lifecycle: Lifecycle): Promise<void>;
   resetLifecycle(): Promise<void>;
+
+  // ---- grouping + API docs ----------------------------------------------
+  moveSource(sourceId: string, targetDatasetId: string): Promise<Source>;
+  renameDataset(datasetId: string, name: string): Promise<Dataset>;
+  deleteDataset(datasetId: string): Promise<void>;
+  apiEndpoints(): Promise<readonly ApiEndpoint[]>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -150,6 +157,10 @@ export const IPC = {
   getLifecycle: 'datera:getLifecycle',
   setLifecycle: 'datera:setLifecycle',
   resetLifecycle: 'datera:resetLifecycle',
+  moveSource: 'datera:moveSource',
+  renameDataset: 'datera:renameDataset',
+  deleteDataset: 'datera:deleteDataset',
+  apiEndpoints: 'datera:apiEndpoints',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

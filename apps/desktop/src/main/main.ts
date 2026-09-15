@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'elect
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  API_ENDPOINTS,
   Datera,
   DateraError,
   type AddSourceRequest,
@@ -162,6 +163,10 @@ function registerHandlers(): void {
   handle(IPC.addEnvironment, async (input: never) => core().addEnvironment(input));
   handle(IPC.removeEnvironment, async (id: string) => core().removeEnvironment(id));
   handle(IPC.pushDataset, async (datasetId: string, envId: string) => core().pushDataset(datasetId, envId));
+  handle(IPC.moveSource, async (sourceId: string, target: string) => core().moveSource(sourceId, target));
+  handle(IPC.renameDataset, async (id: string, name: string) => core().renameDataset(id, name));
+  handle(IPC.deleteDataset, async (id: string) => core().deleteDataset(id));
+  handle(IPC.apiEndpoints, async () => API_ENDPOINTS);
   handle(IPC.getLifecycle, async () => core().getLifecycle());
   handle(IPC.setLifecycle, async (lifecycle: never) => core().setLifecycle(lifecycle));
   handle(IPC.resetLifecycle, async () => core().resetLifecycle());

@@ -42,6 +42,17 @@ export interface Lifecycle {
   readonly lanes: readonly LifecycleLane[];
   /** Always 'curated' in v1. Present so the later traced variant is distinguishable. */
   readonly source?: 'curated';
+  /**
+   * Where the example came from.
+   *
+   * 'your data' — derived from a connected column, so the names and the value are real.
+   * 'authored' — an instructor wrote it.
+   * 'generic'  — the shipped example, used when nothing is connected yet.
+   *
+   * Shown in the UI, because "this is your data" and "this is an illustration" are
+   * different claims and a teaching tool should not blur them.
+   */
+  readonly grounding?: 'your data' | 'authored' | 'generic';
 }
 
 /**

@@ -315,3 +315,40 @@
 .lanenote { font-size: 12.5px; color: var(--ink2); margin-top: 3px; }
 .editrow { margin-top: 18px; }
 .lifeedit { width: 100%; min-height: 260px; border: 1px solid var(--line2); border-radius: 9px; padding: 11px; font-family: var(--mono); font-size: 11.5px; resize: vertical; margin-bottom: 9px; }
+
+/* ------------------------------------------------------- grouping + API */
+.railacts { display: flex; gap: 8px; }
+.linkbtn { background: none; border: 0; color: var(--indigo); font-size: 10px; font-family: var(--mono); padding: 0; text-transform: uppercase; letter-spacing: .05em; }
+.linkbtn:hover { text-decoration: underline; }
+.dsdel { color: var(--ink3); margin-left: 7px; font-size: 13px; letter-spacing: 0; }
+.dsdel:hover { color: var(--red); text-decoration: none; }
+.newds { padding: 8px 7px 10px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; }
+.newds input { flex: 1 1 100%; border: 1px solid var(--line2); border-radius: 7px; padding: 5px 9px; font-size: 12.5px; font-family: inherit; min-width: 0; }
+.newdshint { flex: 1 1 100%; font-size: 11px; color: var(--ink3); line-height: 1.45; }
+.srcbody { min-width: 0; flex: 1; }
+.movebtn { flex: 0 0 auto; font-size: 12px; color: var(--ink3); }
+.movebtn:hover { color: var(--indigo); }
+.movemenu { padding: 7px 8px 9px; background: #f6f7f9; border-radius: 8px; margin: 2px 6px 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+.movehint { flex: 1 1 100%; font-size: 11px; color: var(--ink3); margin-bottom: 2px; }
+.movemenu .btn { padding: 3px 9px; font-size: 11.5px; }
+
+.apicard { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 13px 15px; margin-bottom: 11px; box-shadow: var(--sh); min-width: 0; }
+.apihead { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.verb { font-family: var(--mono); font-size: 10px; font-weight: 600; border-radius: 5px; padding: 2px 7px; letter-spacing: .04em; }
+.verb.get { background: var(--green-bg); color: var(--green); }
+.verb.post { background: var(--indigo-bg); color: var(--indigo); }
+.apipath { font-family: var(--mono); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.authbadge { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; background: var(--violet-bg); color: var(--violet); border-radius: 20px; padding: 2px 8px; }
+.authbadge.open { background: #f1f2f6; color: var(--ink3); }
+.flagbadge { font-family: var(--mono); font-size: 9px; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-line); border-radius: 20px; padding: 1px 8px; }
+.apisummary { font-size: 13px; font-weight: 500; margin: 7px 0 3px; }
+.apidesc { font-size: 12.5px; color: var(--ink2); margin-bottom: 9px; }
+.apiargs { border-collapse: collapse; font-size: 12px; margin-bottom: 9px; width: 100%; }
+.apiargs td { padding: 3px 9px 3px 0; vertical-align: top; color: var(--ink2); }
+.apiargs .an { font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; }
+.apiargs .at { font-family: var(--mono); font-size: 11px; color: var(--indigo); white-space: nowrap; }
+.apiargs .ar { font-size: 10.5px; color: var(--ink3); white-space: nowrap; }
+.apireturns { font-size: 12px; color: var(--ink3); margin-bottom: 8px; }
+.apireturns code { font-family: var(--mono); font-size: 11px; color: var(--ink2); overflow-wrap: anywhere; }
+.groundbadge { border: 1px solid var(--green-line); background: var(--green-bg); color: var(--green); border-radius: 9px; padding: 9px 12px; font-size: 12.5px; margin-bottom: 14px; }
+.groundbadge b { display: block; }

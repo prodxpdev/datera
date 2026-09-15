@@ -75,6 +75,9 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [nav, setNav] = useState<NavId>('workspace');
+  const [newDataset, setNewDataset] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const report = useCallback((e: unknown) => {
     const err = e as { code?: string; message?: string };
@@ -163,6 +166,37 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
     }
   }, [api, refresh, report]);
 
+  const createDataset = async (): Promise<void> => {
+    if (newName.trim().length === 0) return;
+    try {
+      await api.createDataset({ name: newName.trim() });
+      setNewName('');
+      setNewDataset(false);
+      await refresh();
+    } catch (e) {
+      report(e);
+    }
+  };
+
+  const moveTo = async (sourceId: string, datasetId: string): Promise<void> => {
+    try {
+      await api.moveSource(sourceId, datasetId);
+      setMovingId(null);
+      await refresh();
+    } catch (e) {
+      report(e);
+    }
+  };
+
+  const removeDataset = async (datasetId: string): Promise<void> => {
+    try {
+      await api.deleteDataset(datasetId);
+      await refresh();
+    } catch (e) {
+      report(e);
+    }
+  };
+
   if (loaded === null) {
     return <div className="empty">Opening the workspace…</div>;
   }
@@ -239,20 +273,52 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
               <div className="card">
                 <div className="railhead">
                   <span>Datasets</span>
-                  <button
-                    className="btn"
-                    style={{ padding: '2px 8px', fontSize: 11 }}
-                    onClick={() => void addSources()}
-                    disabled={busy}
-                  >
-                    + add
-                  </button>
+                  <span className="railacts">
+                    <button className="linkbtn" data-newds onClick={() => setNewDataset(true)}>
+                      + group
+                    </button>
+                    <button className="linkbtn" onClick={() => void addSources()} disabled={busy}>
+                      + data
+                    </button>
+                  </span>
                 </div>
+
+                {newDataset && (
+                  <div className="newds">
+                    <input
+                      autoFocus
+                      value={newName}
+                      placeholder="Store exports"
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void createDataset();
+                        if (e.key === 'Escape') setNewDataset(false);
+                      }}
+                    />
+                    <button className="btn p" onClick={() => void createDataset()}>Create</button>
+                    <button className="btn" onClick={() => setNewDataset(false)}>Cancel</button>
+                    <div className="newdshint">
+                      Group sources that share a key so they can be queried together. Sources in
+                      different datasets can never be joined — that is the guarantee.
+                    </div>
+                  </div>
+                )}
                 {loaded.datasets.map((d) => (
                   <div key={d.id} className="dsgroup">
                     <div className="dsh">
                       <span className="dsn">{d.name}</span>
-                      <span className="dsc">{loaded.sources.filter((s) => s.datasetId === d.id).length}</span>
+                      <span className="dsc">
+                        {loaded.sources.filter((s) => s.datasetId === d.id).length}
+                        {!d.isDefault && (
+                          <button
+                            className="linkbtn dsdel"
+                            title="Delete this dataset (it must be empty first)"
+                            onClick={() => void removeDataset(d.id)}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
                     </div>
                     {loaded.sources
                       .filter((s) => s.datasetId === d.id)
@@ -265,12 +331,38 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                           onClick={() => setSelectedId(s.id)}
                         >
                           <span className="ic">{KIND_LABEL[s.kind] ?? s.kind.toUpperCase()}</span>
-                          <div>
+                          <div className="srcbody">
                             <div className="nm">{s.name}</div>
                             <div className="ct">
                               {s.status.availability === 'unavailable' ? 'unavailable' : s.kind}
                             </div>
                           </div>
+                          {loaded.datasets.length > 1 && (
+                            <button
+                              className="linkbtn movebtn"
+                              title="Move to another dataset"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMovingId(movingId === s.id ? null : s.id);
+                              }}
+                            >
+                              ⇄
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    {loaded.sources
+                      .filter((s) => s.datasetId === d.id && s.id === movingId)
+                      .map((s) => (
+                        <div className="movemenu" key={`move-${s.id}`}>
+                          <div className="movehint">Move &ldquo;{s.name}&rdquo; to:</div>
+                          {loaded.datasets
+                            .filter((t) => t.id !== d.id)
+                            .map((t) => (
+                              <button key={t.id} className="btn" onClick={() => void moveTo(s.id, t.id)}>
+                                {t.name}
+                              </button>
+                            ))}
                         </div>
                       ))}
                   </div>

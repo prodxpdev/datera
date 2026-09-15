@@ -63,6 +63,10 @@ const IPC = {
   getLifecycle: 'datera:getLifecycle',
   setLifecycle: 'datera:setLifecycle',
   resetLifecycle: 'datera:resetLifecycle',
+  moveSource: 'datera:moveSource',
+  renameDataset: 'datera:renameDataset',
+  deleteDataset: 'datera:deleteDataset',
+  apiEndpoints: 'datera:apiEndpoints',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -115,4 +119,8 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   getLifecycle: () => call(IPC.getLifecycle),
   setLifecycle: (lifecycle: unknown) => call(IPC.setLifecycle, lifecycle),
   resetLifecycle: () => call(IPC.resetLifecycle),
+  moveSource: (sourceId: string, target: string) => call(IPC.moveSource, sourceId, target),
+  renameDataset: (id: string, name: string) => call(IPC.renameDataset, id, name),
+  deleteDataset: (id: string) => call(IPC.deleteDataset, id),
+  apiEndpoints: () => call(IPC.apiEndpoints),
 });

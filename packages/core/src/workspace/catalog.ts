@@ -313,6 +313,24 @@ export class Catalog {
     });
   }
 
+  async updateSourceDataset(id: string, datasetId: string, name: string): Promise<void> {
+    await this.engine.executeInternal(
+      `UPDATE ${CATALOG_SCHEMA}.sources SET dataset_id = ?, name = ? WHERE id = ?`,
+      [datasetId, name, id],
+    );
+  }
+
+  async renameDataset(id: string, name: string): Promise<void> {
+    await this.engine.executeInternal(
+      `UPDATE ${CATALOG_SCHEMA}.datasets SET name = ? WHERE id = ?`,
+      [name, id],
+    );
+  }
+
+  async deleteDataset(id: string): Promise<void> {
+    await this.engine.executeInternal(`DELETE FROM ${CATALOG_SCHEMA}.datasets WHERE id = ?`, [id]);
+  }
+
   async deleteSource(id: string): Promise<void> {
     await this.engine.executeInternal(`DELETE FROM ${CATALOG_SCHEMA}.sources WHERE id = ?`, [id]);
   }

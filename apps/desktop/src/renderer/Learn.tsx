@@ -29,6 +29,29 @@ export function Learn({ api }: { readonly api: DateraApi }): JSX.Element {
         row to the screen:
       </p>
 
+      {/* "This is your data" and "this is an illustration" are different claims, and a
+          teaching tool should not blur them. */}
+      <div className={lifecycle.grounding === 'generic' ? 'softflag' : 'groundbadge'}>
+        {lifecycle.grounding === 'your data' && (
+          <>
+            <b>Grounded in your data.</b> The column, its type and the value below are read from
+            the source you connected — not an example.
+          </>
+        )}
+        {lifecycle.grounding === 'authored' && (
+          <>
+            <b>Authored.</b> Someone defined this lifecycle for this workspace. Reset to go back to
+            one derived from your data.
+          </>
+        )}
+        {lifecycle.grounding === 'generic' && (
+          <>
+            <b>A generic example.</b> Connect a source and this walkthrough rebuilds itself around
+            one of your own columns.
+          </>
+        )}
+      </div>
+
       {lifecycle.layers.map((layer, i) => (
         <div key={`${layer.name}-${i}`}>
           <div className="layer">

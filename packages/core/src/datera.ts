@@ -68,6 +68,7 @@ import {
 } from './environments/types.js';
 import { RemoteDatera } from './environments/remote.js';
 import { DEFAULT_LIFECYCLE, validateLifecycle, type Lifecycle } from './teaching/lifecycle.js';
+import { deriveLifecycle } from './teaching/derive.js';
 import { connectConfig as buildConnectConfig, type ClientId, type ConnectConfig, type ConfigOptions } from './serve/configs.js';
 import {
   DEFAULT_RETENTION, migrateTraceLog, pruneTraceLog as prune, queryTraceLog as runTraceQuery,
@@ -976,6 +977,110 @@ export class Datera {
 
     const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
     return summariseTouched(this.engine, sql, schemas, rowsReturned);
+  }
+
+  // ------------------------------------------------------------ grouping (§3)
+
+  /**
+   * Move a source into another dataset.
+   *
+   * This is what makes grouping real: §3 calls the dataset "the one boundary that governs
+   * everything", and a boundary you cannot form leaves every source in Ungrouped.
+   *
+   * The view is *recreated* in the target schema rather than the catalog row relabelled,
+   * because the view is what the boundary is made of — a source whose row says "store"
+   * while its view still lives in `ds_ungrouped` would be queryable from the wrong side.
+   */
+  async moveSource(sourceId: string, targetDatasetId: string): Promise<Source> {
+    const source = await this.getSource(sourceId);
+    const target = await this.getDataset(targetDatasetId);
+    const current = await this.getDataset(source.datasetId);
+
+    if (current.id === target.id) return source;
+
+    const name = await this.uniqueName(target.id, source.name);
+
+    // Read the view's definition from the schema it is in, so the move works for a file
+    // source and an attached-database source alike.
+    const definition = await this.viewDefinition(current.schemaName, source.name);
+
+    await this.engine.executeInternal(
+      `CREATE OR REPLACE VIEW ${qualified(target.schemaName, name)} AS ${definition}`,
+    );
+    await this.engine.executeInternal(
+      `DROP VIEW IF EXISTS ${qualified(current.schemaName, source.name)}`,
+    );
+    await this.catalog.updateSourceDataset(sourceId, target.id, name);
+
+    // Definitions describe a source, not a dataset, so they travel with it. Relationships
+    // do not: they are scoped to a dataset, and a link to a table that is no longer there
+    // would be a confirmed statement that had quietly become false.
+    this.ports.logger.log('info', 'Source moved', {
+      sourceId, from: current.id, to: target.id, name,
+    });
+
+    return { ...source, datasetId: target.id, name };
+  }
+
+  async renameDataset(datasetId: string, name: string): Promise<Dataset> {
+    await this.getDataset(datasetId);
+    assertAuthorableName(name, 'dataset');
+    await this.catalog.renameDataset(datasetId, name);
+    return this.getDataset(datasetId);
+  }
+
+  /**
+   * Delete an empty dataset.
+   *
+   * Refused while it still holds sources: dropping them silently would destroy the user's
+   * connections, and orphaning them would leave rows pointing at a schema that is gone.
+   * Making them move the sources first is the honest third option.
+   */
+  async deleteDataset(datasetId: string): Promise<void> {
+    const dataset = await this.getDataset(datasetId);
+
+    if (dataset.isDefault) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        `"${dataset.name}" is the default dataset and cannot be removed — new sources need somewhere to land.`,
+        { datasetId },
+      );
+    }
+
+    const held = (await this.catalog.listSources()).filter((s) => s.datasetId === datasetId);
+    if (held.length > 0) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        `"${dataset.name}" still holds ${held.length} source${held.length === 1 ? '' : 's'} ` +
+          `(${held.map((s) => s.name).join(', ')}). Move or remove them first — Datera will not ` +
+          `silently drop your connections.`,
+        { datasetId, sources: held.map((s) => s.name) },
+      );
+    }
+
+    await this.engine.executeInternal(`DROP SCHEMA IF EXISTS ${quoteIdent(dataset.schemaName)} CASCADE`);
+    await this.catalog.deleteDataset(datasetId);
+    this.ports.logger.log('info', 'Dataset deleted', { datasetId });
+  }
+
+  /** The SELECT behind a view, so a move can rebuild it elsewhere. */
+  private async viewDefinition(schemaName: string, viewName: string): Promise<string> {
+    const result = await this.engine.executeInternal(
+      `SELECT sql FROM duckdb_views() WHERE schema_name = ? AND view_name = ?`,
+      [schemaName, viewName],
+    );
+    const sql = result.rows[0]?.[0];
+    if (typeof sql !== 'string' || sql.length === 0) {
+      throw new DateraError(
+        'SOURCE_UNAVAILABLE',
+        `Could not read the definition of "${viewName}" — it may have been removed outside Datera.`,
+        { schemaName, viewName },
+      );
+    }
+
+    // duckdb_views() returns the whole CREATE VIEW statement; the move needs only its body.
+    const match = /\bAS\b([\s\S]+)$/i.exec(sql);
+    return (match?.[1] ?? sql).trim().replace(/;\s*$/, '');
   }
 
   // ------------------------------------------------------------ dictionary (§4)
@@ -2119,15 +2224,68 @@ export class Datera {
 
   // ------------------------------------------------------ teaching (§11.9)
 
-  /** The curated lifecycle, or the shipped default. */
+  /**
+   * The lifecycle to show: authored if one exists, otherwise derived from the connected
+   * data, otherwise the shipped example.
+   *
+   * Deriving is the default because a teaching tool that explains a generic `revenue`
+   * column while the user is looking at their own table is teaching the concept and not
+   * the data — and the data is the part they came for.
+   */
   async getLifecycle(): Promise<Lifecycle> {
     const raw = await this.catalog.getSetting(LIFECYCLE_SETTING);
-    if (raw === null) return DEFAULT_LIFECYCLE;
-    try {
-      return { source: 'curated', ...(JSON.parse(raw) as Lifecycle) };
-    } catch {
-      return DEFAULT_LIFECYCLE;
+    if (raw !== null) {
+      try {
+        return { source: 'curated', grounding: 'authored', ...(JSON.parse(raw) as Lifecycle) };
+      } catch {
+        // A corrupt stored lifecycle falls through to a derived one rather than failing.
+      }
     }
+    return this.derivedLifecycle();
+  }
+
+  private async derivedLifecycle(): Promise<Lifecycle> {
+    const sources = (await this.listSources()).filter((s) => s.status.availability === 'available');
+    if (sources.length === 0) return { ...DEFAULT_LIFECYCLE, grounding: 'generic' };
+
+    const schemas: SourceSchema[] = [];
+    const dictionaries: SourceDictionary[] = [];
+    for (const source of sources) {
+      const dataset = await this.getDataset(source.datasetId);
+      schemas.push(await introspectSource(this.engine, source, dataset.schemaName));
+      dictionaries.push(await this.getDictionary(source.id));
+    }
+
+    // A real value from the data, so the walkthrough shows a number the user recognises
+    // rather than one Datera made up.
+    const sample = await this.sampleForLifecycle(schemas, sources);
+    return deriveLifecycle(schemas, dictionaries, sample);
+  }
+
+  private async sampleForLifecycle(
+    schemas: readonly SourceSchema[],
+    sources: readonly SourceWithStatus[],
+  ): Promise<{ column: string; value: string } | null> {
+    for (const schema of schemas) {
+      const money = schema.columns.find((c) => /_(cents|cent|pence|minor)$/i.test(c.name));
+      if (money === undefined) continue;
+
+      const source = sources.find((s) => s.name === schema.sourceName);
+      if (source === undefined) continue;
+      const dataset = await this.getDataset(source.datasetId);
+
+      try {
+        const result = await this.engine.executeInternal(
+          `SELECT CAST(${quoteIdent(money.name)} AS VARCHAR) FROM ${qualified(dataset.schemaName, schema.sourceName)}
+           WHERE ${quoteIdent(money.name)} IS NOT NULL LIMIT 1`,
+        );
+        const value = result.rows[0]?.[0];
+        if (typeof value === 'string') return { column: money.name, value };
+      } catch {
+        // Fall through to the derived default.
+      }
+    }
+    return null;
   }
 
   /**
@@ -2142,8 +2300,10 @@ export class Datera {
     );
   }
 
+  /** Forget an authored lifecycle, falling back to the one derived from the data. */
   async resetLifecycle(): Promise<void> {
-    await this.catalog.setSetting(LIFECYCLE_SETTING, JSON.stringify(DEFAULT_LIFECYCLE));
+    await this.catalog.setSetting(LIFECYCLE_SETTING, '');
+    await this.engine.executeInternal(`DELETE FROM _datera.settings WHERE key = ?`, [LIFECYCLE_SETTING]);
   }
 
   // --------------------------------------------------------------- authoring
