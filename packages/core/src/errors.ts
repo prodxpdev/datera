@@ -15,6 +15,9 @@ export type DateraErrorCode =
   | 'SECRET_STORE_UNAVAILABLE'
   | 'CONNECTION_FAILED'
   | 'SQL_ERROR'
+  | 'MODEL_CALL_FAILED'
+  | 'MODEL_UNAVAILABLE'
+  | 'CANNOT_ANSWER'
   | 'INVALID_ARGUMENT';
 
 export class DateraError extends Error {

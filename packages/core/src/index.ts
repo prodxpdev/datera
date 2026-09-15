@@ -87,3 +87,26 @@ export {
 export type { WorkspaceManifest, WorkspacePaths } from './workspace/workspace.js';
 
 export * from './ports/index.js';
+
+// ---------------------------------------------------------------- models (§9)
+export type {
+  ModelDescriptor, ModelTier, ModelRole, Locality,
+  ChatModel, ChatMessage, ChatRequest, ChatResponse, TokenUsage, Pricing,
+} from './models/types.js';
+export { describeModel, providerLabel, computeCost, estimateTokens, FREE } from './models/types.js';
+export { OpenAICompatibleChatModel } from './models/openai-compatible.js';
+export type { OpenAICompatibleOptions } from './models/openai-compatible.js';
+export { AnthropicChatModel } from './models/anthropic.js';
+export type { AnthropicOptions } from './models/anthropic.js';
+export { detectLocalRuntimes, DEFAULT_CANDIDATES } from './models/detect.js';
+export type { DetectedRuntime, RuntimeCandidate, DetectOptions } from './models/detect.js';
+export { pricingFor } from './models/pricing.js';
+export { redactSecrets } from './models/redact.js';
+
+// ------------------------------------------------------------- query (§5)
+export type { AskResult, Citations } from './query/ask.js';
+export type { Trace, TraceStage, StageKind, Route } from './query/trace.js';
+export { buildSchemaContext, summariseSchemas, SYSTEM_PROMPT } from './query/context.js';
+export { extractSql } from './query/sql-extract.js';
+export type { ModelCatalogue } from './datera.js';
+export { apiKeySecretName } from './datera.js';

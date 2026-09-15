@@ -1,4 +1,5 @@
 import type {
+  HttpPort,
   ClockPort,
   FileStat,
   FileSystemPort,
@@ -8,7 +9,7 @@ import type {
   Ports,
   SecretStorePort,
 } from '@datera/core';
-import { NodeFileSystem, SystemClock } from '@datera/node-runtime';
+import { NodeFileSystem, NodeHttp, SystemClock } from '@datera/node-runtime';
 
 /** Deterministic clock: timestamps and durations are inputs to tests, not sources of flake. */
 export class FakeClock implements ClockPort {
@@ -139,13 +140,29 @@ export interface TestPorts extends Ports {
   readonly clock: FakeClock;
   readonly logger: CapturingLogger;
   readonly secrets: InMemorySecretStore;
+  readonly http?: HttpPort | undefined;
 }
 
-export function testPorts(options: { realClock?: boolean } = {}): TestPorts {
+export interface TestPortOptions {
+  readonly realClock?: boolean;
+  /**
+   * Give the core real network access.
+   *
+   * Off by default, and deliberately so: a test that does not opt in cannot reach the
+   * network at all, which means the offline guarantees stay true by construction rather
+   * than by everyone remembering.
+   */
+  readonly http?: boolean;
+}
+
+export function testPorts(options: TestPortOptions = {}): TestPorts {
   return {
     fs: new RecordingFileSystem(),
+    // The fake clock never advances on its own, which would make every duration zero.
+    // Anything measuring elapsed time asks for the real one.
     clock: options.realClock === true ? (new SystemClock() as unknown as FakeClock) : new FakeClock(),
     logger: new CapturingLogger(),
     secrets: new InMemorySecretStore(),
+    ...(options.http === true ? { http: new NodeHttp() } : {}),
   };
 }

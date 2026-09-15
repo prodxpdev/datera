@@ -112,6 +112,17 @@ export class Engine {
     }
   }
 
+  /**
+   * The connection, exposed only so the read-only guard can *classify* statements.
+   *
+   * Narrow on purpose. Callers that need to run something go through
+   * `executeUserQuery`, which guards first; this exists because classification needs a
+   * connection and handing the whole engine around would make the guarded path optional.
+   */
+  classificationConnection(): DuckDBConnectionPort {
+    return this.conn;
+  }
+
   async close(): Promise<void> {
     await this.conn.close();
     await this.handle.close();

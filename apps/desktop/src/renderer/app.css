@@ -120,3 +120,91 @@
   .kv { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
   .kv dt { margin-top: 7px; }
 }
+
+/* ------------------------------------------------------------ Phase 2: ask */
+.nav.idle { cursor: pointer; }
+.nav.idle:hover { background: #eef0f4; }
+.nav.on { cursor: default; }
+
+.qscope { font-size: 12.5px; color: var(--ink2); background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.askbar { display: flex; gap: 8px; margin-bottom: 14px; min-width: 0; }
+.askbar input { flex: 1; min-width: 0; border: 1px solid var(--line2); border-radius: 9px; padding: 9px 13px; font-family: inherit; font-size: 14px; outline: none; background: var(--card); }
+.askbar input:focus { border-color: var(--indigo); }
+
+.card.ans { padding: 15px 17px; min-width: 0; }
+.aq { font-size: 15px; font-weight: 600; margin-bottom: 10px; overflow-wrap: anywhere; }
+.ansql { margin: 0 0 12px; background: var(--code, #0f1524); color: #c8d3e6; border-radius: 9px; padding: 11px 13px; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ansrows { border: 1px solid var(--line); border-radius: 9px; overflow: auto; max-height: 38vh; max-width: 100%; }
+.ansrows table { border-collapse: collapse; min-width: 100%; width: max-content; font-size: 12.5px; }
+.ansrows th { position: sticky; top: 0; background: #f6f7f9; text-align: left; font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink2); padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ansrows td { padding: 6px 10px; border-bottom: 1px solid #f1f2f6; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+.ansrows td.null { color: var(--ink3); font-style: italic; }
+
+.cites { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
+.cite { font-family: var(--mono); font-size: 10px; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-line); border-radius: 5px; padding: 1px 7px; }
+.af { display: flex; align-items: center; gap: 9px; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.drillbtn { background: var(--card); border: 1px solid var(--line2); border-radius: 7px; padding: 5px 11px; font-size: 12px; color: var(--ink2); }
+.drillbtn:hover { border-color: var(--indigo); color: var(--indigo); }
+.pathmini { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; border-radius: 20px; padding: 2px 9px; background: var(--indigo-bg); color: var(--indigo); }
+.tmini { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); margin-left: auto; }
+
+/* A refusal is a first-class outcome, not an error state. It looks considered, not broken. */
+.flag { border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber); border-radius: 10px; padding: 12px 14px; font-size: 13px; overflow-wrap: anywhere; }
+.flag b { display: block; margin-bottom: 4px; }
+.flag .drillbtn { margin-top: 10px; background: transparent; }
+.softflag { border: 1px solid var(--line2); background: #fbfbfc; color: var(--ink2); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; margin-bottom: 11px; }
+
+/* --------------------------------------------------------- the glass box */
+.scrim { position: fixed; inset: 0; background: rgba(18, 22, 28, .32); opacity: 0; pointer-events: none; transition: opacity .16s; z-index: 40; }
+.scrim.show { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(620px, 92vw); background: var(--card); border-left: 1px solid var(--line); box-shadow: -18px 0 50px rgba(18,22,28,.13); transform: translateX(100%); transition: transform .18s; z-index: 41; display: flex; flex-direction: column; }
+.drawer.show { transform: none; }
+.dh { display: flex; align-items: flex-start; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+.dh .t { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.dh .x { margin-left: auto; background: none; border: 0; font-size: 20px; color: var(--ink3); line-height: 1; }
+.db { padding: 14px 18px 30px; overflow: auto; min-width: 0; }
+
+.tracetop { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; font-family: var(--mono); font-size: 10.5px; color: var(--ink3); padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.pbadge { text-transform: uppercase; letter-spacing: .06em; border-radius: 20px; padding: 2px 9px; background: var(--indigo-bg); color: var(--indigo); }
+
+.stage { padding: 11px 0; border-bottom: 1px solid #f2f3f7; min-width: 0; }
+.stage .sl { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.stage .sl .k { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink3); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-weight: 400; }
+.stage .sl .ms { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--ink3); font-weight: 400; }
+.stage .ss { font-size: 12px; color: var(--ink2); margin-top: 5px; overflow-wrap: anywhere; }
+.modelname { font-family: var(--mono); font-size: 11.5px; color: var(--indigo); background: var(--indigo-bg); border: 1px solid var(--indigo-line); border-radius: 6px; padding: 3px 8px; display: inline-block; margin-top: 6px; overflow-wrap: anywhere; }
+.sqlblock, .payload { margin: 7px 0 0; background: #0f1524; color: #c8d3e6; border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.payloadlabel { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink3); margin-top: 9px; }
+
+/* ------------------------------------------------------------ SQL editor */
+.sqled { overflow: hidden; }
+.sqlhead { display: flex; justify-content: space-between; align-items: center; padding: 9px 13px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; color: var(--ink3); gap: 10px; }
+.sqled textarea { width: 100%; border: 0; outline: none; padding: 13px; font-family: var(--mono); font-size: 12.5px; min-height: 130px; resize: vertical; display: block; background: var(--card); color: var(--ink); }
+.sqlres { margin-top: 12px; min-width: 0; }
+
+/* ---------------------------------------------------------------- models */
+.models { max-width: 640px; min-width: 0; }
+.tiernote { font-size: 12.5px; color: var(--ink2); background: var(--indigo-bg); border: 1px solid var(--indigo-line); border-radius: 9px; padding: 9px 12px; margin-bottom: 16px; }
+.tier { margin-bottom: 22px; }
+.tier h3 { font-size: 13px; margin: 0 0 3px; font-weight: 600; }
+.tierdesc { font-size: 12.5px; color: var(--ink3); margin: 0 0 10px; }
+.opt { display: flex; align-items: center; gap: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; margin-bottom: 7px; background: var(--card); cursor: pointer; min-width: 0; }
+.opt:hover { border-color: var(--line2); }
+.opt.on { border-color: var(--indigo); background: var(--indigo-bg); }
+.opt.off { opacity: .55; cursor: default; }
+.opt .radio { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--line2); flex: 0 0 auto; }
+.opt.on .radio { border-color: var(--indigo); border-width: 4px; }
+.opt .ot { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.opt .od { font-size: 11.5px; color: var(--ink3); overflow-wrap: anywhere; }
+.opt .tg { margin-left: auto; font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; border-radius: 20px; padding: 2px 8px; white-space: nowrap; }
+.opt .tg.free { background: var(--green-bg); color: var(--green); }
+.opt .tg.key { background: var(--violet-bg); color: var(--violet); }
+
+.keyrow { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
+.keyrow .klabel { font-size: 13px; min-width: 88px; }
+.keyrow input { flex: 1; min-width: 160px; border: 1px solid var(--line2); border-radius: 8px; padding: 7px 11px; font-family: var(--mono); font-size: 12px; outline: none; }
+.keyrow .kset { font-family: var(--mono); font-size: 10.5px; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-line); border-radius: 5px; padding: 2px 8px; }
+
+.caveat { border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; margin: 18px 0 12px; }
+.caveat b { display: block; margin-bottom: 3px; }
+.mono { font-family: var(--mono); }

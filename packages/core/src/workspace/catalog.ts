@@ -53,6 +53,33 @@ export class Catalog {
         state VARCHAR NOT NULL,
         created_at VARCHAR NOT NULL
       )`);
+    await this.engine.executeInternal(`
+      CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.settings (
+        key VARCHAR PRIMARY KEY,
+        value VARCHAR NOT NULL
+      )`);
+  }
+
+  /**
+   * Workspace-level settings — currently the chosen chat and embedding models.
+   *
+   * A key/value table rather than columns, because settings accrete and a migration per
+   * preference is not worth it. Credentials never live here; they go to the SecretStore.
+   */
+  async setSetting(key: string, value: string): Promise<void> {
+    await this.engine.executeInternal(
+      `INSERT OR REPLACE INTO ${CATALOG_SCHEMA}.settings (key, value) VALUES (?, ?)`,
+      [key, value],
+    );
+  }
+
+  async getSetting(key: string): Promise<string | null> {
+    const result = await this.engine.executeInternal(
+      `SELECT value FROM ${CATALOG_SCHEMA}.settings WHERE key = ?`,
+      [key],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : String(row[0]);
   }
 
   async insertRelationship(rel: AuthoredRelationship): Promise<void> {

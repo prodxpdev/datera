@@ -1,11 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Datera, DateraError, type AddSourceRequest, type PreviewOptions } from '@datera/core';
+import {
+  Datera,
+  DateraError,
+  type AddSourceRequest,
+  type ModelDescriptor,
+  type PreviewOptions,
+} from '@datera/core';
 import {
   ConsoleLogger,
   NodeFileSystem,
   SystemClock,
+  NodeHttp,
   nodeDuckDBDriver,
   resolveExtensionDirectory,
 } from '@datera/node-runtime';
@@ -58,6 +65,9 @@ async function openCore(): Promise<Datera> {
       clock: new SystemClock(),
       logger: new ConsoleLogger({ minLevel: 'info' }),
       secrets: new SafeStorageSecretStore(secretStorePath(workspacePath)),
+      // The desktop client is allowed to reach model providers the user has chosen.
+      // Datera Server will supply its own, env-configured (spec §9).
+      http: new NodeHttp(),
     },
     extensionDirectory: resolveExtensionDirectory(app.isPackaged ? undefined : appRoot),
     appVersion: app.getVersion(),
@@ -113,6 +123,12 @@ function registerHandlers(): void {
     core().preview(sourceId, options ?? {}),
   );
   handle(IPC.query, async (datasetId: string, sql: string) => core().query(datasetId, sql));
+  handle(IPC.ask, async (datasetId: string, question: string) => core().ask(datasetId, question));
+  handle(IPC.listModels, async () => core().listModels());
+  handle(IPC.setChatModel, async (model: ModelDescriptor) => core().setChatModel(model));
+  handle(IPC.setApiKey, async (provider: string, key: string) => core().setApiKey(provider, key));
+  handle(IPC.hasApiKey, async (provider: string) => core().hasApiKey(provider));
+  handle(IPC.clearApiKey, async (provider: string) => core().clearApiKey(provider));
 
   handle(IPC.pickFiles, async () => {
     if (window === null) return [];

@@ -13,16 +13,24 @@ is a separate, private repository.
 
 ---
 
-## Status — Phase 1 complete
+## Status — Phases 1 and 2 built
 
-Phase 1 of the nine-phase build sequence (spec §11) is built and tested: the portable core library,
-DuckDB embedded, read-only connect and ingest of the DuckDB-native formats, schema introspection
-with inferred types, and the Electron Workspace shell.
+**Phase 1** — the portable core, DuckDB embedded, read-only connect and ingest of the
+DuckDB-native formats, schema introspection with inferred types, and the Electron Workspace shell.
 
-**Nothing else is built yet.** There is no NL→SQL, no dictionary, no semantic search, no
-copy-on-write, no writes, no MCP or REST serving, and no Datera Server. The nav items for those are
-visible but disabled in the app, deliberately — see [`PLAN.md`](./PLAN.md) for what each later phase
-contains and what it must satisfy.
+**Phase 2** — NL→SQL with visible cited SQL, the query glass box (parse → route → schema →
+model → SQL → guard → rows → cost), a direct SQL editor on the same guard, and the spec §9
+three-tier model system with keys in the OS keychain.
+
+**One part of Phase 2 is not built: the bundled local model (tier 1).** The provider
+architecture, selection, trace and cost accounting are all in place and tested, but no weights
+ship and no inference runs locally — so out of the box, with no model configured, Ask reports
+`MODEL_UNAVAILABLE` rather than answering. Tiers 2 and 3 work today. See
+[the Phase 2 gap](#the-phase-2-gap-the-bundled-model) below.
+
+**Not built at all:** dictionary, semantic search, copy-on-write, versions, normalize, writes,
+MCP/REST serving, Datera Server. Those nav items are visible but disabled in the app,
+deliberately — see [`PLAN.md`](./PLAN.md).
 
 | | |
 |---|---|
@@ -86,6 +94,20 @@ panel showing exactly what the parser decided.
 Your workspace lives in the OS app-data directory and persists between launches. Set
 `DATERA_WORKSPACE=/some/path` to put it somewhere else.
 
+### Ask a question
+
+Ask needs a chat model. The quickest path today is Ollama:
+
+```bash
+ollama serve                 # in another terminal
+ollama pull qwen2.5-coder:7b # a good small SQL model
+```
+
+Then open **Models** in the app — the running runtime and its models appear — pick one, and use
+**Ask**. Every answer has a **How it was made** button: the routing decision, the schema given to
+the model, *exactly* what was sent, the generated SQL, the read-only verdict, the rows, and the
+cost. Or add an Anthropic/OpenAI key in the same view; it goes to the OS keychain.
+
 ### Poke the core without the app
 
 ```bash
@@ -109,6 +131,20 @@ missing reports `EXTENSION_UNAVAILABLE` with the fix in the message.
 
 This is asserted, not assumed: the connect path for every format runs in a test with **network
 egress blocked**.
+
+### The Phase 2 gap: the bundled model
+
+Spec §9 tier 1 is a bundled local model — no key, no account — with weights fetched on first run
+(decision D-08). **That is not implemented.** What exists instead:
+
+- the full provider abstraction, so adding it is a new `ChatModel` and nothing else;
+- tier 2, **detected local runtimes** (Ollama, LM Studio, any OpenAI-compatible endpoint), which
+  gives the same "no key, nothing uploaded" property to anyone who has one installed;
+- tier 3, **remote BYO key**, with keys in the OS keychain.
+
+The consequence is honest and visible in the app: with nothing configured, Ask says no model is
+configured rather than silently doing nothing. The Models view marks the bundled tier
+unavailable rather than offering something that would fail on use.
 
 ### Live Postgres / MySQL tests
 

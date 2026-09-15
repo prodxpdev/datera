@@ -26,6 +26,12 @@ const IPC = {
   preview: 'datera:preview',
   query: 'datera:query',
   pickFiles: 'datera:pickFiles',
+  ask: 'datera:ask',
+  listModels: 'datera:listModels',
+  setChatModel: 'datera:setChatModel',
+  setApiKey: 'datera:setApiKey',
+  hasApiKey: 'datera:hasApiKey',
+  clearApiKey: 'datera:clearApiKey',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -41,4 +47,10 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   preview: (sourceId: string, options?: unknown) => call(IPC.preview, sourceId, options),
   query: (datasetId: string, sql: string) => call(IPC.query, datasetId, sql),
   pickFiles: () => call(IPC.pickFiles),
+  ask: (datasetId: string, question: string) => call(IPC.ask, datasetId, question),
+  listModels: () => call(IPC.listModels),
+  setChatModel: (model: unknown) => call(IPC.setChatModel, model),
+  setApiKey: (provider: string, key: string) => call(IPC.setApiKey, provider, key),
+  hasApiKey: (provider: string) => call(IPC.hasApiKey, provider),
+  clearApiKey: (provider: string) => call(IPC.clearApiKey, provider),
 });

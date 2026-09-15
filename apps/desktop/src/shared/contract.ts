@@ -1,5 +1,8 @@
 import type {
   AddSourceRequest,
+  AskResult,
+  ModelCatalogue,
+  ModelDescriptor,
   Dataset,
   EngineInfo,
   PreviewOptions,
@@ -30,6 +33,14 @@ export interface DateraApi {
   query(datasetId: string, sql: string): Promise<QueryResult>;
   /** Opens the OS file picker. Host-provided: the core has no idea what a dialog is. */
   pickFiles(): Promise<readonly string[]>;
+
+  // ---- Phase 2 -----------------------------------------------------------
+  ask(datasetId: string, question: string): Promise<AskResult>;
+  listModels(): Promise<ModelCatalogue>;
+  setChatModel(model: ModelDescriptor): Promise<void>;
+  setApiKey(provider: string, apiKey: string): Promise<void>;
+  hasApiKey(provider: string): Promise<boolean>;
+  clearApiKey(provider: string): Promise<void>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -43,6 +54,12 @@ export const IPC = {
   preview: 'datera:preview',
   query: 'datera:query',
   pickFiles: 'datera:pickFiles',
+  ask: 'datera:ask',
+  listModels: 'datera:listModels',
+  setChatModel: 'datera:setChatModel',
+  setApiKey: 'datera:setApiKey',
+  hasApiKey: 'datera:hasApiKey',
+  clearApiKey: 'datera:clearApiKey',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

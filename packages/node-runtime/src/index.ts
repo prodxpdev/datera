@@ -9,3 +9,4 @@ export { NodeDuckDBDriver, nodeDuckDBDriver } from './duckdb-driver.js';
 export { NodeFileSystem, SystemClock, ConsoleLogger, UnavailableSecretStore } from './ports.js';
 export type { ConsoleLoggerOptions } from './ports.js';
 export { resolveExtensionDirectory } from './extension-dir.js';
+export { NodeHttp } from './http.js';

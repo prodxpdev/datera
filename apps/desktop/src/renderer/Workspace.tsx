@@ -7,6 +7,9 @@ import type {
   SourceWithStatus,
 } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
+import { Ask } from './Ask.js';
+import { SqlView } from './SqlView.js';
+import { Models } from './Models.js';
 
 /**
  * P1-17 — the Workspace view.
@@ -23,14 +26,32 @@ const KIND_LABEL: Record<string, string> = {
   sqlite: 'DB', postgres: 'PG', mysql: 'MYSQL',
 };
 
-const NAV: readonly (readonly [string, string, boolean])[] = [
-  ['▤', 'Workspace', true],
-  ['⌗', 'Dictionary', false],
-  ['◇', 'Ask', false],
-  ['›_', 'SQL', false],
-  ['⇄', 'Serve · API/MCP', false],
-  ['☁', 'Environments', false],
-  ['◎', 'Learn', false],
+type NavId = 'workspace' | 'dictionary' | 'ask' | 'sql' | 'models' | 'serve' | 'environments' | 'learn';
+
+interface NavItem {
+  readonly id: NavId;
+  readonly icon: string;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly title: string;
+  readonly subtitle: string;
+}
+
+/**
+ * Views that exist, and views that do not.
+ *
+ * The unbuilt ones stay visible but disabled. A user should be able to see where the
+ * product is going, and a missing nav item reads as a bug in a way a greyed one does not.
+ */
+const NAV: readonly NavItem[] = [
+  { id: 'workspace', icon: '▤', label: 'Workspace', enabled: true, title: 'Workspace', subtitle: 'your local data sources' },
+  { id: 'ask', icon: '◇', label: 'Ask', enabled: true, title: 'Ask', subtitle: 'natural language, with the receipts' },
+  { id: 'sql', icon: '›_', label: 'SQL', enabled: true, title: 'SQL', subtitle: 'write DuckDB SQL, read-only' },
+  { id: 'models', icon: '◈', label: 'Models', enabled: true, title: 'Models', subtitle: 'local by default, your key if you want one' },
+  { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: false, title: 'Dictionary', subtitle: 'Phase 3' },
+  { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: false, title: 'Serve', subtitle: 'Phase 7' },
+  { id: 'environments', icon: '☁', label: 'Environments', enabled: false, title: 'Environments', subtitle: 'Phase 8' },
+  { id: 'learn', icon: '◎', label: 'Learn', enabled: false, title: 'Learn', subtitle: 'Phase 9' },
 ];
 
 const PAGE_SIZE = 50;
@@ -49,6 +70,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [nav, setNav] = useState<NavId>('workspace');
 
   const report = useCallback((e: unknown) => {
     const err = e as { code?: string; message?: string };
@@ -142,16 +164,25 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   }
 
   const dataset = loaded.datasets[0];
+  const current = NAV.find((n) => n.id === nav) ?? NAV[0]!;
 
   return (
     <div className="shell">
       <aside className="side">
         <div className="brand"><span className="m" /><span className="bt">Datera</span></div>
         <div className="grp">Client</div>
-        {NAV.map(([icon, label, enabled]) => (
-          <div key={label} className={`nav ${enabled ? 'on' : 'off'}`} title={label}>
-            <span className="ic">{icon}</span>
-            <span className="tx">{label}</span>
+        {NAV.map((item) => (
+          <div
+            key={item.id}
+            className={`nav ${item.enabled ? (nav === item.id ? 'on' : 'idle') : 'off'}`}
+            title={item.enabled ? item.label : `${item.label} — ${item.subtitle}`}
+            data-nav={item.id}
+            onClick={() => {
+              if (item.enabled) setNav(item.id);
+            }}
+          >
+            <span className="ic">{item.icon}</span>
+            <span className="tx">{item.label}</span>
           </div>
         ))}
         <div className="foot">
@@ -165,8 +196,8 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           ● Working locally — data on this machine, read-only, nothing exposed.
         </div>
         <div className="mtop">
-          <h1>Workspace</h1>
-          <span className="desc">your local data sources</span>
+          <h1>{current.title}</h1>
+          <span className="desc">{current.subtitle}</span>
         </div>
 
         <div className="pane">
@@ -176,7 +207,15 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
             </div>
           )}
 
-          {loaded.sources.length === 0 ? (
+          {nav === 'ask' && (
+            <Ask api={api} datasetId={dataset?.id ?? 'ungrouped'} datasetName={dataset?.name ?? 'Ungrouped'} />
+          )}
+          {nav === 'sql' && (
+            <SqlView api={api} datasetId={dataset?.id ?? 'ungrouped'} datasetName={dataset?.name ?? 'Ungrouped'} />
+          )}
+          {nav === 'models' && <Models api={api} />}
+
+          {nav === 'workspace' && (loaded.sources.length === 0 ? (
             <div className="empty">
               <h2>No sources connected</h2>
               <p>
@@ -251,7 +290,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                 )}
               </div>
             </div>
-          )}
+          ))}
         </div>
       </div>
     </div>

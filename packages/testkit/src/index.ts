@@ -39,6 +39,9 @@ export {
 } from './fake-ports.js';
 export type { TestPorts, CapturedLog } from './fake-ports.js';
 
+export { startStubModelServer } from './stub-model-server.js';
+export type { StubModelServer, CapturedRequest } from './stub-model-server.js';
+
 export {
   openTestWorkspace,
   sequentialIds,

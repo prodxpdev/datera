@@ -96,9 +96,12 @@ describe('P1-18/P1-19 Electron shell', () => {
     expect(probe.hasRequire).toBe(false);
     expect(probe.hasProcess).toBe(false);
     expect(probe.hasModule).toBe(false);
+    // Asserted exactly, not as a subset: the bridge is the renderer's entire reach into
+    // the main process, so an accidental addition should fail here and be looked at.
     expect(probe.bridgeKeys).toEqual([
-      'addSource', 'engineInfo', 'getSchema', 'listDatasets', 'listSources',
-      'pickFiles', 'preview', 'query', 'removeSource',
+      'addSource', 'ask', 'clearApiKey', 'engineInfo', 'getSchema', 'hasApiKey',
+      'listDatasets', 'listModels', 'listSources', 'pickFiles', 'preview', 'query',
+      'removeSource', 'setApiKey', 'setChatModel',
     ]);
   });
 

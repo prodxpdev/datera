@@ -42,6 +42,12 @@ import {
   type SourceWithStatus,
 } from './sources/types.js';
 import { introspectSource, introspectRelation, type SourceSchema } from './schema/introspect.js';
+import { ask, type AskResult } from './query/ask.js';
+import { detectLocalRuntimes, type DetectedRuntime } from './models/detect.js';
+import { AnthropicChatModel } from './models/anthropic.js';
+import { OpenAICompatibleChatModel } from './models/openai-compatible.js';
+import { describeModel, type ChatModel, type ModelDescriptor } from './models/types.js';
+import { OfflineHttp, type HttpPort } from './ports/http.js';
 import { stem } from './util/paths.js';
 
 export interface DateraOptions {
@@ -87,6 +93,22 @@ export interface QueryResult {
   readonly durationMs: number;
 }
 
+/** Where the chosen chat model is remembered between launches. */
+const CHAT_MODEL_SETTING = 'model.chat';
+/** Keychain entry holding the API key for a remote provider. One per provider. */
+export const apiKeySecretName = (provider: string): string => `model.apiKey.${provider}`;
+
+export interface ModelCatalogue {
+  /** Runtimes found on this machine right now. Empty is a normal result, not an error. */
+  readonly detected: readonly DetectedRuntime[];
+  /** Remote providers the user has a stored key for. */
+  readonly remote: readonly ModelDescriptor[];
+  /** The chat model currently selected, if any. */
+  readonly selected: ModelDescriptor | null;
+  /** Rendered exactly as the trace will show it (spec §9). */
+  readonly selectedName: string | null;
+}
+
 /** Bounded so a preview of a billion-row Parquet cannot be turned into a full scan. */
 const MAX_PREVIEW_LIMIT = 1000;
 const DEFAULT_PREVIEW_LIMIT = 50;
@@ -105,6 +127,7 @@ export class Datera {
     private readonly paths: WorkspacePaths,
     private readonly manifest: WorkspaceManifest,
     private readonly makeId: () => string,
+    private readonly http: HttpPort,
   ) {}
 
   static async open(options: DateraOptions): Promise<Datera> {
@@ -129,7 +152,17 @@ export class Datera {
     const catalog = new Catalog(engine);
     await catalog.migrate();
 
-    const datera = new Datera(engine, catalog, options.ports, paths, manifest, makeId);
+    const datera = new Datera(
+      engine,
+      catalog,
+      options.ports,
+      paths,
+      manifest,
+      makeId,
+      // No network unless the host supplies a way to reach it: the default posture is
+      // local-only, and reaching out is a deliberate act by the host (invariant §1.6).
+      options.ports.http ?? new OfflineHttp(),
+    );
     await datera.ensureDefaultDataset();
     await datera.reattachDatabases();
     return datera;
@@ -554,6 +587,147 @@ export class Datera {
     };
   }
 
+  // ------------------------------------------------------------ models (§9)
+
+  /**
+   * What models are available right now, across all three tiers.
+   *
+   * Detection is best-effort: a runtime that is not running is simply absent, and a slow
+   * or broken one is skipped rather than allowed to hold up the caller. Nothing here
+   * throws because a model is missing — that is the normal state of a fresh install.
+   */
+  async listModels(): Promise<ModelCatalogue> {
+    const detected = await detectLocalRuntimes({ http: this.http });
+
+    const remote: ModelDescriptor[] = [];
+    for (const [provider, ids] of Object.entries(KNOWN_REMOTE_MODELS)) {
+      const key = await this.ports.secrets.get(apiKeySecretName(provider));
+      if (key === null || key.length === 0) continue;
+      for (const id of ids) {
+        remote.push({
+          tier: 'remote', provider, id, role: 'chat', locality: 'remote', label: id,
+        });
+      }
+    }
+
+    const selected = await this.selectedChatModelDescriptor();
+    return {
+      detected,
+      remote,
+      selected,
+      selectedName: selected === null ? null : describeModel(selected),
+    };
+  }
+
+  /** Choose the chat model. Persisted, and separate from the embedding model (§1.6). */
+  async setChatModel(descriptor: ModelDescriptor): Promise<void> {
+    await this.catalog.setSetting(CHAT_MODEL_SETTING, JSON.stringify(descriptor));
+    this.ports.logger.log('info', 'Chat model selected', {
+      model: describeModel(descriptor),
+      tier: descriptor.tier,
+    });
+  }
+
+  /**
+   * Store an API key for a remote provider.
+   *
+   * Goes straight to the OS keychain and is never written to the catalog, a config file,
+   * or a log line (spec §9, decision D-06). A host without protected storage is refused
+   * rather than silently downgraded.
+   */
+  async setApiKey(provider: string, apiKey: string): Promise<void> {
+    if (!(await this.ports.secrets.isAvailable())) {
+      throw new DateraError(
+        'SECRET_STORE_UNAVAILABLE',
+        'No protected credential store is available, and Datera will not write an API key to disk in plaintext.',
+        { provider },
+      );
+    }
+    await this.ports.secrets.set(apiKeySecretName(provider), apiKey);
+    this.ports.logger.log('info', 'API key stored', { provider });
+  }
+
+  async hasApiKey(provider: string): Promise<boolean> {
+    const key = await this.ports.secrets.get(apiKeySecretName(provider));
+    return key !== null && key.length > 0;
+  }
+
+  async clearApiKey(provider: string): Promise<void> {
+    await this.ports.secrets.delete(apiKeySecretName(provider));
+  }
+
+  private async selectedChatModelDescriptor(): Promise<ModelDescriptor | null> {
+    const raw = await this.catalog.getSetting(CHAT_MODEL_SETTING);
+    if (raw === null) return null;
+    try {
+      return JSON.parse(raw) as ModelDescriptor;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Build a live client for the selected model, fetching its key at the last moment. */
+  private async chatModel(): Promise<ChatModel | null> {
+    const descriptor = await this.selectedChatModelDescriptor();
+    if (descriptor === null) return null;
+
+    if (descriptor.provider === 'anthropic') {
+      const apiKey = await this.ports.secrets.get(apiKeySecretName('anthropic'));
+      if (apiKey === null) return null;
+      return new AnthropicChatModel({ http: this.http, apiKey, modelId: descriptor.id });
+    }
+
+    const apiKey =
+      descriptor.locality === 'remote'
+        ? (await this.ports.secrets.get(apiKeySecretName(descriptor.provider))) ?? undefined
+        : undefined;
+
+    const baseUrl =
+      descriptor.endpoint ?? (descriptor.provider === 'openai' ? 'https://api.openai.com' : null);
+    if (baseUrl === null) return null;
+
+    return new OpenAICompatibleChatModel({
+      http: this.http,
+      baseUrl,
+      modelId: descriptor.id,
+      descriptor,
+      apiKey,
+    });
+  }
+
+  // ----------------------------------------------------------------- asking
+
+  /**
+   * Ask a question in natural language (spec §5).
+   *
+   * Everything about how the answer was produced comes back in `trace`. Datera declines
+   * rather than guesses: see query/ask.ts for the three ways that happens.
+   */
+  async ask(datasetId: string, question: string): Promise<AskResult> {
+    const dataset = await this.getDataset(datasetId);
+    const model = await this.chatModel();
+
+    const sources = (await this.listSources()).filter(
+      (s) => s.datasetId === datasetId && s.status.availability === 'available',
+    );
+    const schemas: SourceSchema[] = [];
+    for (const source of sources) {
+      schemas.push(await introspectSource(this.engine, source, dataset.schemaName));
+    }
+
+    return ask({
+      engine: this.engine,
+      model,
+      datasetId,
+      schemaName: dataset.schemaName,
+      schemas,
+      question,
+      traceId: this.makeId(),
+      now: () => this.ports.clock.now(),
+      monotonicMs: () => this.ports.clock.monotonicMs(),
+    });
+  }
+
   // --------------------------------------------------------------- authoring
 
   /**
@@ -736,3 +910,15 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 export type { ResultSet };
+
+/**
+ * Remote models offered once a key is present.
+ *
+ * A short curated list rather than a live catalogue call: it keeps model selection
+ * working offline, and the ids are checked against the pricing table so the cost line is
+ * never a guess. Anything missing can still be reached by an explicit descriptor.
+ */
+const KNOWN_REMOTE_MODELS: Readonly<Record<string, readonly string[]>> = {
+  anthropic: ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
+  openai: ['gpt-4o', 'gpt-4o-mini'],
+};

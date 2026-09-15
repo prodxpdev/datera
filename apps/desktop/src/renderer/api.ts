@@ -29,6 +29,7 @@ type Bridge = Record<string, (...args: unknown[]) => Promise<Envelope>>;
 const METHODS = [
   'engineInfo', 'listDatasets', 'listSources', 'addSource', 'removeSource',
   'getSchema', 'preview', 'query', 'pickFiles',
+  'ask', 'listModels', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {
