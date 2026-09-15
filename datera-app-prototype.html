@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Datera — unified prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#e9ebef;--app:#fbfcfd;--ink:#12161c;--ink2:#414855;--ink3:#7b828f;--line:#e6e8ee;--line2:#d7dae2;--card:#fff;
+  --indigo:#4f46e5;--indigo-bg:#edecfd;--indigo-line:#c9c5f6;
+  --green:#0d7a52;--green-bg:#e3f2eb;--green-line:#b6ddca;
+  --violet:#6d3fc4;--violet-bg:#efeafc;--violet-line:#d6cdf3;
+  --blue:#1a63c4;--blue-bg:#e6eefb;--blue-line:#bcd2f2;
+  --amber:#8a5a00;--amber-bg:#f8efd8;--amber-line:#e6d3a4;
+  --code:#0f1524;--codeink:#c8d3e6;
+  --body:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  --sh:0 1px 2px rgba(18,22,28,.05),0 3px 12px rgba(18,22,28,.05);--sh2:0 16px 48px rgba(18,22,28,.18);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
+.win{max-width:1150px;margin:14px auto;height:calc(100vh - 28px);min-height:640px;background:var(--app);border:1px solid var(--line2);border-radius:14px;overflow:hidden;box-shadow:var(--sh2);display:flex;flex-direction:column}
+/* titlebar + env switcher */
+.tb{display:flex;align-items:center;gap:12px;padding:9px 15px;background:#e5e7ec;border-bottom:1px solid var(--line);flex:none}
+.tb .dots{display:flex;gap:6px}.tb .dots i{width:11px;height:11px;border-radius:50%;background:#cfd4de}
+.tb .name{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+.tb .g{width:16px;height:16px;border-radius:4px;background:linear-gradient(135deg,var(--indigo),#7c74f0)}
+.tb .name small{color:var(--ink3);font-weight:400}
+.tb .spring{flex:1}
+.envsw{display:flex;align-items:center;gap:8px}
+.envsw .lb{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+.envseg{display:flex;gap:2px;background:#d9dce2;border-radius:8px;padding:3px}
+.envseg button{border:0;background:none;padding:5px 11px;border-radius:6px;font-size:11.5px;font-weight:500;color:var(--ink2);display:flex;align-items:center;gap:6px}
+.envseg button .d{width:7px;height:7px;border-radius:50%}
+.envseg button.on{background:#fff;box-shadow:var(--sh);color:var(--ink)}
+.envbanner{padding:7px 20px;font-size:12px;display:flex;align-items:center;gap:9px;flex:none}
+.envbanner.remote{background:var(--blue-bg);border-bottom:1px solid var(--blue-line);color:var(--blue)}
+.envbanner.local{background:var(--green-bg);border-bottom:1px solid var(--green-line);color:var(--green)}
+.envbanner .mono{font-weight:500}
+
+.body{flex:1;min-height:0;display:flex}
+.side{width:172px;background:#fff;border-right:1px solid var(--line);padding:12px 9px;display:flex;flex-direction:column;flex:none}
+@media(max-width:820px){.side{width:56px}}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;font-size:13px;font-weight:500;color:var(--ink2);cursor:pointer}
+.nav:hover{background:#f4f5f8}
+.nav.on{background:var(--indigo-bg);color:var(--indigo)}
+.nav .ic{width:16px;text-align:center;flex:none;font-size:13px}
+@media(max-width:820px){.nav .tx{display:none}}
+.side .grp{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);padding:12px 11px 5px}
+@media(max-width:820px){.side .grp{display:none}}
+.side .foot{margin-top:auto;padding:10px 11px;font-family:var(--mono);font-size:9.5px;color:var(--ink3);border-top:1px solid var(--line);display:flex;align-items:center;gap:6px}
+@media(max-width:820px){.side .foot{display:none}}
+.side .foot .d{width:7px;height:7px;border-radius:50%;background:var(--green)}
+
+.mainwrap{flex:1;min-width:0;display:flex;flex-direction:column}
+.mtop{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px 4px;flex:none}
+.mtop h1{font-size:19px;font-weight:600;margin:0}
+.mtop .desc{color:var(--ink3);font-size:12.5px}
+.pane{flex:1;min-height:0;overflow-y:auto;padding:12px 22px 30px}
+
+/* shared bits */
+.subnav{display:flex;gap:2px;background:#eceef3;border-radius:9px;padding:3px;margin-bottom:16px;width:fit-content}
+.subnav button{border:0;background:none;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:500;color:var(--ink3)}
+.subnav button.on{background:#fff;color:var(--ink);box-shadow:var(--sh)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh)}
+.cite{display:inline-flex;gap:4px;font-family:var(--mono);font-size:10.5px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-line);border-radius:5px;padding:1px 7px;margin:2px 5px 2px 0}
+.readonly{font-family:var(--mono);font-size:10.5px;color:var(--green);margin-top:10px;display:flex;align-items:center;gap:6px}
+.btn{border:1px solid var(--line2);background:#fff;border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:500;color:var(--ink2)}
+.btn.p{background:var(--indigo);border-color:var(--indigo);color:#fff}
+
+/* workspace */
+.wsgrid{display:grid;grid-template-columns:190px 1fr;gap:18px;align-items:start}
+@media(max-width:720px){.wsgrid{grid-template-columns:1fr}}
+.srcitem{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.srcitem:hover{background:#f4f5f8}
+.srcitem.on{background:var(--indigo-bg);border-color:var(--indigo-line)}
+.srcitem .ic{font-family:var(--mono);font-size:8px;font-weight:600;background:#eef0f4;color:var(--ink3);border-radius:4px;padding:2px 5px}
+.srcitem.on .ic{background:#fff;color:var(--indigo)}
+.srcitem .nm{font-size:12.5px;font-weight:500}.srcitem .ct{font-family:var(--mono);font-size:9px;color:var(--ink3)}
+.schip{font-family:var(--mono);font-size:10.5px;background:#f1f3f7;border:1px solid var(--line);border-radius:5px;padding:2px 7px;color:var(--ink2);margin:0 5px 5px 0;display:inline-block}
+.schip .ty{color:var(--ink3)}
+.prev{border:1px solid var(--line);border-radius:10px;overflow:auto}
+.prev table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+.prev th{text-align:left;font-family:var(--mono);font-size:9px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink3);padding:7px 11px;border-bottom:1px solid var(--line);background:#fafbfc}
+.prev td{padding:6px 11px;border-bottom:1px solid var(--line)}
+
+/* ask */
+.askbar{display:flex;gap:8px;margin-bottom:12px}
+.askbar input{flex:1;border:1px solid var(--line2);border-radius:10px;padding:10px 13px;font-size:13.5px;outline:none}
+.sq{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 13px;margin-bottom:7px;box-shadow:var(--sh);font-size:13px}
+.sq:hover{border-color:var(--indigo-line)}
+.sq .tag{font-family:var(--mono);font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink3);display:block;margin-top:3px}
+.ans .aq{padding:11px 15px;border-bottom:1px solid var(--line);font-weight:600;font-size:14px;background:#fafbfc;border-radius:12px 12px 0 0}
+.ans .ab{padding:15px}.ans .at{font-size:14.5px;line-height:1.55}.ans .at b{font-weight:600}
+.ans .af{display:flex;gap:8px;align-items:center;padding:11px 15px;border-top:1px solid var(--line);flex-wrap:wrap}
+.drillbtn{border:1px solid var(--line2);background:#fff;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;color:var(--ink2)}
+.drillbtn:hover{border-color:var(--indigo)}
+.pathmini{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:20px;margin-left:auto}
+.pathmini.structured{background:var(--indigo-bg);color:var(--indigo)} .pathmini.semantic{background:var(--violet-bg);color:var(--violet)}
+
+/* drill-down data viz */
+.dd-h{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11.5px;color:var(--ink2)}
+.legend .lg{display:inline-flex;align-items:center;gap:6px}
+.legend .sw{width:12px;height:12px;border-radius:3px;border:1px solid}
+.sw.used{background:var(--indigo-bg);border-color:var(--indigo)} .sw.match{background:var(--green-bg);border-color:var(--green)} .sw.dim{background:#f1f3f7;border-color:var(--line2)}
+/* spreadsheet drill */
+.ssheet{border:1px solid var(--line2);border-radius:10px;overflow:auto}
+.ssheet table{border-collapse:collapse;font-family:var(--mono);font-size:11px;width:100%}
+.ssheet th{padding:6px 10px;border:1px solid var(--line);background:#f4f5f8;color:var(--ink3);font-weight:500;text-align:left;white-space:nowrap}
+.ssheet th.used{background:var(--indigo-bg);color:var(--indigo);border-color:var(--indigo-line)}
+.ssheet td{padding:5px 10px;border:1px solid var(--line);white-space:nowrap;color:var(--ink3)}
+.ssheet td.usedcol{color:var(--ink)}
+.ssheet tr.match td{background:var(--green-bg)}
+.ssheet tr.match td.usedcol{color:#0b5c3e;font-weight:500}
+.ddnote{font-size:12px;color:var(--ink3);margin-top:10px}.ddnote b{color:var(--ink2)}
+/* db table drill */
+.dbdrill{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.dbtbl{border:1px solid var(--line2);border-radius:10px;overflow:hidden;min-width:180px}
+.dbtbl .tt{background:var(--indigo);color:#fff;font-family:var(--mono);font-size:11.5px;padding:6px 11px;font-weight:500}
+.dbtbl .cc{display:flex;justify-content:space-between;gap:14px;padding:5px 11px;font-family:var(--mono);font-size:11px;border-top:1px solid var(--line);color:var(--ink3)}
+.dbtbl .cc.used{background:var(--indigo-bg);color:var(--ink)}
+.dbtbl .cc .role{font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:1px 5px}
+.role.join{background:var(--blue-bg);color:var(--blue)} .role.filter{background:var(--amber-bg);color:var(--amber)} .role.group{background:var(--violet-bg);color:var(--violet)} .role.sel{background:var(--green-bg);color:var(--green)}
+.joinline{align-self:center;font-family:var(--mono);font-size:10.5px;color:var(--blue);text-align:center;padding:0 4px}
+.joinline .ar{font-size:16px}
+
+/* serve: trace (compact) */
+.flow{display:flex;overflow-x:auto;padding:6px 0 12px;gap:0}
+.node{flex:none;width:104px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 10px;box-shadow:var(--sh)}
+.node.model{border-color:var(--violet-line)}
+.node .ni{font-family:var(--mono);font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
+.node .nn{font-weight:600;font-size:12px;margin:2px 0}.node .ms{font-family:var(--mono);font-size:9px;color:var(--indigo)}
+.conn{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--indigo);font-family:var(--mono)}
+.cfg{background:var(--code);color:var(--codeink);font-family:var(--mono);font-size:11.5px;line-height:1.6;border-radius:9px;padding:13px 15px;overflow-x:auto}
+.cfg .k{color:#79c0ff}.cfg .s{color:#a5d6ff}.cfg .c{color:#8b949e}
+.opt{display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid var(--line2);border-radius:9px;margin-bottom:6px;cursor:pointer}
+.opt.on{border-color:var(--indigo);background:var(--indigo-bg)}
+.opt .radio{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line2)}
+.opt.on .radio{border-color:var(--indigo);background:radial-gradient(circle at center,var(--indigo) 0 4px,#fff 4px)}
+.opt .ot{font-weight:500;font-size:12.5px}.opt .od{font-size:11px;color:var(--ink3)}
+.opt .tg{margin-left:auto;font-family:var(--mono);font-size:8.5px;text-transform:uppercase;border-radius:5px;padding:2px 6px}
+.tg.free{background:var(--green-bg);color:var(--green)}.tg.key{background:var(--indigo-bg);color:var(--indigo)}
+
+/* environments */
+.envgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:20px}
+@media(max-width:820px){.envgrid{grid-template-columns:1fr}}
+.envcard{border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--sh);background:#fff}
+.envcard.active{border-color:var(--indigo)}
+.envcard .eh{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.envcard .en{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
+.envcard .kind{font-family:var(--mono);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:2px 6px}
+.kind.local{background:var(--green-bg);color:var(--green)} .kind.server{background:var(--blue-bg);color:var(--blue)}
+.envcard .st{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-bottom:10px}
+.envcard .st .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+.dot.run{background:var(--green)} .dot.off{background:#c9cfda}
+.envcard .rowk{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;color:var(--ink2)}
+.envcard .rowk .v{font-family:var(--mono);color:var(--ink)}
+.envcard .ebtn{width:100%;margin-top:12px;border-radius:8px;padding:8px;font-weight:600;font-size:12px;border:1px solid var(--line2);background:#fff;color:var(--ink2)}
+.envcard .ebtn.deploy{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.pushbox{border:1px dashed var(--line2);border-radius:12px;padding:16px;background:#fafbfc}
+.pushbox h3{font-size:14px;margin:0 0 4px}.pushbox p{margin:0 0 12px;color:var(--ink2);font-size:12.5px}
+.pushrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.pushrow .lb{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);min-width:70px}
+.selpill{font-size:11.5px;background:#fff;border:1px solid var(--line2);border-radius:20px;padding:4px 10px;color:var(--ink2)}
+.selpill.on{border-color:var(--indigo);background:var(--indigo-bg);color:var(--indigo)}
+.arrowdeploy{font-family:var(--mono);font-size:12px;color:var(--indigo)}
+.diag{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--ink2)}
+.diag .box{border:1px solid var(--line2);border-radius:9px;padding:9px 12px;background:#fff;text-align:center}
+.diag .box b{display:block;font-size:12.5px}.diag .box small{color:var(--ink3);font-size:10.5px}
+.diag .ar{color:var(--indigo);font-family:var(--mono)}
+
+/* learn / lifecycle (compact) */
+.layer{border:1px solid var(--line);border-radius:10px;box-shadow:var(--sh);padding:10px 13px;background:#fff}
+.layer .lh{display:flex;justify-content:space-between;margin-bottom:6px}
+.layer .ln{font-weight:600;font-size:12.5px}.layer .lk{font-family:var(--mono);font-size:8.5px;text-transform:uppercase;color:var(--ink3);background:#f1f3f7;border-radius:5px;padding:2px 6px}
+.layer .rp{font-family:var(--mono);font-size:11px;background:var(--code);color:var(--codeink);border-radius:7px;padding:8px 10px}
+.layer .rp .h{color:#f0b866}.layer .rp .dim{color:#8b949e}
+.tf2{padding:5px 0 5px 14px;font-size:11.5px;color:var(--ink2)}
+.tf2 .ar{color:var(--indigo);font-family:var(--mono)}.tf2 .bug{color:var(--amber);font-size:10.5px;display:block;margin-top:2px}
+
+/* dictionary */
+.dcpick{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.dctag{font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin:0 1px 0 6px}
+.dcsrc{border:1px solid var(--line2);background:#fff;border-radius:8px;padding:6px 10px;font-size:11.5px;font-weight:500;color:var(--ink2)}
+.dcsrc.on{border-color:var(--indigo);background:var(--indigo-bg);color:var(--indigo)}
+.entcard{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--sh);padding:14px 16px;margin-bottom:14px;flex-wrap:wrap}
+.entn{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.entd{font-size:12.5px;color:var(--ink2);margin-top:3px}
+.entmeta{display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--ink3)}.entmeta b{color:var(--ink)}
+.mst{font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:.04em;border-radius:5px;padding:2px 6px}
+.mst.ok{background:var(--green-bg);color:var(--green)}.mst.sg{background:var(--amber-bg);color:var(--amber)}
+.dicttbl{border:1px solid var(--line);border-radius:11px;box-shadow:var(--sh);overflow:auto;background:#fff}
+.dicttbl table{width:100%;border-collapse:collapse;font-size:12.5px}
+.dicttbl th{text-align:left;font-family:var(--mono);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);padding:8px 12px;border-bottom:1px solid var(--line);background:#fafbfc;white-space:nowrap}
+.dicttbl td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.dicttbl .cn{font-family:var(--mono);font-size:11.5px;font-weight:500;white-space:nowrap}.dicttbl .cn small{color:var(--ink3);font-weight:400}
+.ph{color:var(--ink3);font-style:italic}
+.alias{font-family:var(--mono);font-size:10px;background:var(--indigo-bg);color:var(--indigo);border-radius:5px;padding:1px 6px;margin:0 4px 3px 0;display:inline-block}
+.role2{font-family:var(--mono);font-size:8.5px;text-transform:uppercase;border-radius:5px;padding:2px 6px}
+.role2.measure{background:var(--green-bg);color:var(--green)}.role2.dimension{background:var(--indigo-bg);color:var(--indigo)}.role2.id{background:#eef0f4;color:var(--ink3)}.role2.time{background:var(--blue-bg);color:var(--blue)}.role2.flag{background:var(--amber-bg);color:var(--amber)}.role2.text{background:var(--violet-bg);color:var(--violet)}
+.mono2{font-family:var(--mono);font-size:11px;color:var(--ink2)}
+.enums{margin-top:5px;display:flex;flex-direction:column;gap:2px}
+.enum{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}.enum b{color:var(--ink)}
+.dcpay{margin-top:14px;background:var(--indigo-bg);border:1px solid var(--indigo-line);border-radius:11px;padding:13px 16px;font-size:12.5px;color:#3a327a;line-height:1.55}
+.dcpay b{color:var(--ink)}
+/* datasets */
+.dsgroup{margin-bottom:3px;border-radius:9px}
+.dsgroup.act{background:#f6f6fd}
+.dsh{display:flex;justify-content:space-between;align-items:center;padding:7px 9px;cursor:pointer;border-radius:8px}
+.dsh:hover{background:#eef0f4}
+.dsgroup.act .dsn{color:var(--indigo)}
+.dsn{font-weight:600;font-size:12px}
+.dsc{font-family:var(--mono);font-size:9px;color:var(--ink3)}
+.dsc .linked{color:var(--green)}
+.srcitem.sub{margin-left:6px}
+.dsbar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.dsbn{font-size:16px;font-weight:600}
+.dsbd{font-size:12.5px;color:var(--ink3)}
+.scope{font-family:var(--mono);font-size:10px;color:var(--indigo);background:var(--indigo-bg);border:1px solid var(--indigo-line);border-radius:20px;padding:4px 10px;white-space:nowrap}
+.relpanel{border:1px solid var(--line);border-radius:11px;box-shadow:var(--sh);background:#fff;overflow:hidden}
+.rp-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:9px 13px;border-bottom:1px solid var(--line)}
+.rel{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.rel:last-child{border-bottom:0}
+.rk{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+.rel .ar{color:var(--blue);font-family:var(--mono)}
+.rs{font-family:var(--mono);font-size:8.5px;text-transform:uppercase;letter-spacing:.04em;border-radius:5px;padding:2px 6px;background:#f1f3f7;color:var(--ink3)}
+.rs.ok{background:var(--green-bg);color:var(--green)}
+.rel.sugg{background:#fbfaf3}
+.relconfirm{border:1px solid var(--indigo);background:var(--indigo);color:#fff;border-radius:6px;padding:3px 11px;font-size:11px;font-weight:600}
+.relwhy{flex-basis:100%;font-size:11px;color:var(--ink3);margin-top:1px}
+.relempty{padding:13px;font-size:12.5px;color:var(--ink2);line-height:1.5}
+.qscope{font-size:12px;color:var(--ink2);background:var(--indigo-bg);border:1px solid var(--indigo-line);border-radius:9px;padding:8px 12px;margin-bottom:12px}
+.qscope b{color:var(--ink)}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(18,22,28,.4);display:none;z-index:40}.scrim.show{display:block}
+.drawer{position:fixed;top:0;right:0;height:100vh;width:min(480px,100%);background:var(--app);box-shadow:-10px 0 40px rgba(0,0,0,.16);z-index:50;transform:translateX(100%);transition:transform .28s;display:flex;flex-direction:column}
+.drawer.show{transform:none}
+@media(prefers-reduced-motion:reduce){.drawer{transition:none}}
+.drawer .dh{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line)}
+.drawer .dh .t{font-weight:600}.drawer .dh .x{border:0;background:none;font-size:20px;color:var(--ink3)}
+.drawer .dsub{display:flex;gap:2px;background:#eceef3;border-radius:8px;padding:3px;margin:12px 16px 0}
+.drawer .dsub button{flex:1;border:0;background:none;padding:6px;border-radius:6px;font-size:12px;font-weight:500;color:var(--ink3)}
+.drawer .dsub button.on{background:#fff;color:var(--ink);box-shadow:var(--sh)}
+.drawer .db{flex:1;overflow-y:auto;padding:16px}
+.st2{border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:#fff;box-shadow:var(--sh)}
+.st2 .sl{font-weight:600;font-size:12px;display:flex;gap:7px;align-items:center}
+.st2 .sl .k{font-family:var(--mono);font-size:8px;text-transform:uppercase;color:var(--ink3);background:#f1f3f7;border-radius:4px;padding:2px 5px}
+.st2 .ss{font-size:11.5px;color:var(--ink2);margin-top:3px}
+.st2 pre{background:var(--code);color:var(--codeink);font-family:var(--mono);font-size:11px;line-height:1.5;border-radius:7px;padding:9px 11px;margin:7px 0 0;overflow-x:auto}
+.st2 .kw{color:#79c0ff}.st2 .s{color:#a5d6ff}.st2 .nm{color:#f0b866}.st2 .cm{color:#8b949e}
+.st2 .vec{font-family:var(--mono);font-size:10px;color:#8fd4ff;background:var(--code);border-radius:7px;padding:8px 10px;margin-top:7px;word-break:break-all}
+.pbadge{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;padding:4px 10px;border-radius:20px;color:#fff;display:inline-block;margin-bottom:8px}
+.pbadge.structured{background:var(--indigo)}.pbadge.semantic{background:var(--violet)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;opacity:0;transition:.25s;z-index:80}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="tb"><div class="dots"><i></i><i></i><i></i></div><div class="name"><span class="g"></span>Datera <small>· one client, local + deployed</small></div><div class="spring"></div>
+    <div class="envsw"><span class="lb">Environment</span><div class="envseg" id="envseg"></div></div>
+  </div>
+  <div id="banner"></div>
+  <div class="body">
+    <nav class="side" id="side"></nav>
+    <div class="mainwrap"><div class="mtop" id="mtop"></div><div class="pane" id="pane"></div></div>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const ENVS=[
+ {id:'local',name:'Local',kind:'local',status:'on this machine',url:'localhost:7391',target:'This laptop',running:true,reach:'You only'},
+ {id:'test',name:'Test',kind:'server',status:'running',url:'datera-test.fly.dev',target:'Docker · Fly.io',running:true,reach:'Your team (3 tokens)'},
+ {id:'prod',name:'Production',kind:'server',status:'not deployed',url:'—',target:'Cloud Run',running:false,reach:'—'}
+];
+const SOURCES={
+ orders:{ic:'CSV',name:'orders.csv',count:'4,215 rows',schema:[['order_id','VARCHAR'],['product','VARCHAR'],['revenue_cents','BIGINT'],['qty','INT'],['created_at','TIMESTAMP'],['refunded','BOOL']],
+   cols:['order_id','product','revenue_cents','qty','created_at','refunded'],
+   rows:[['A-1042','Trail Hoodie','8900','1','2026-05-14','false'],['A-1043','Wool Beanie','2400','2','2026-05-14','false'],['A-1044','Summit Pack','12900','1','2026-01-09','true'],['A-1045','Trail Socks','1600','3','2026-05-15','false']]},
+ notes:{ic:'MD',name:'support_notes.md',count:'318 notes',schema:[['order_id','VARCHAR'],['note','TEXT (embedded)']],cols:['order_id','note'],
+   rows:[['A-1042','“Item arrived cracked.”'],['A-1108','“Box crushed in transit.”']]},
+ customers:{ic:'DB',name:'customers.db',count:'1,050 rows',schema:[['id','UUID'],['name','VARCHAR'],['plan','VARCHAR'],['ltv_cents','BIGINT']],cols:['id','name','plan','ltv_cents'],
+   rows:[['c-01','Northwind','Pro','1842000'],['c-02','Acme','Team','1411000']]},
+ survey:{ic:'CSV',name:'survey_q3.csv',count:'820 rows',schema:[['respondent','VARCHAR'],['nps','INT'],['segment','VARCHAR']],cols:['respondent','nps','segment'],rows:[['r-01','9','SMB'],['r-02','6','Enterprise']]},
+ adspend:{ic:'XLSX',name:'ad_spend.xlsx',count:'52 rows',schema:[['week','DATE'],['channel','VARCHAR'],['spend_cents','BIGINT']],cols:['week','channel','spend_cents'],rows:[['2026-05-11','Search','420000'],['2026-05-11','Social','180000']]},
+ scratch:{ic:'CSV',name:'scratch_analysis.csv',count:'40 rows',schema:[['label','VARCHAR'],['value','DOUBLE']],cols:['label','value'],rows:[['alpha','1.2'],['beta','3.4']]}
+};
+const DATASETS=[
+ {id:'sales',name:'Store exports',desc:'Three exports that share keys — meant to be queried together.',sources:['orders','customers','notes'],
+   rels:[{a:'orders.customer_id',b:'customers.id'}],sugg:{a:'support_notes.order_id',b:'orders.order_id',why:'same name & type · 100% of notes match an existing order'}},
+ {id:'mkt',name:'Marketing analysis',desc:'Unrelated files for a different question — no shared keys.',sources:['survey','adspend'],rels:[],sugg:null},
+ {id:'loose',name:'Ungrouped',desc:'On its own until you group it with something.',sources:['scratch'],rels:[],sugg:null,ungrouped:true}
+];
+function datasetOf(src){return (DATASETS.find(d=>d.sources.includes(src))||DATASETS[0]).id;}
+function curDS(){return DATASETS.find(d=>d.id===state.dataset)||DATASETS[0];}
+const META={
+ orders:{entity:{def:'A single completed purchase.',grain:'one row per order',pk:'order_id',state:'confirmed'},cols:{
+   order_id:{meaning:'Unique order identifier.',role:'id',state:'confirmed'},
+   product:{meaning:'Name of the product sold.',aka:'item, sku',role:'dimension',state:'confirmed'},
+   revenue_cents:{meaning:'Order revenue, stored in cents (minor units).',aka:'sales, revenue, rev, income',unit:'cents → USD (÷100)',role:'measure',state:'confirmed'},
+   qty:{meaning:'Units sold in the order.',aka:'quantity, units',role:'measure',state:'confirmed'},
+   created_at:{meaning:'When the order was placed (UTC).',aka:'date, placed, ordered',role:'time',state:'confirmed'},
+   refunded:{meaning:'Whether the order was refunded.',role:'flag',state:'suggested',enums:[['true','= money returned; excluded from revenue'],['false','= not refunded; counts toward revenue']]}}},
+ customers:{entity:{def:'A customer account.',grain:'one row per customer',pk:'id',state:'suggested'},cols:{
+   plan:{meaning:'Subscription tier.',aka:'tier',role:'dimension',state:'suggested',enums:[['Pro / Team','paid tiers'],['Free','no revenue']]},
+   ltv_cents:{meaning:'Lifetime value in cents.',aka:'ltv, lifetime value',unit:'cents → USD',role:'measure',state:'suggested'}}},
+ notes:{entity:{def:'A free-text support note tied to an order.',grain:'one note per order',pk:'order_id',state:'suggested'},cols:{
+   note:{meaning:'Customer support message (embedded for semantic search).',aka:'comment, feedback',role:'text',state:'confirmed'}}}
+};
+function metaOf(src){return META[src]||{entity:{def:'Not defined yet — auto-draft to get started.',grain:'—',pk:'—',state:'suggested'},cols:{}};}
+const QUESTIONS={
+ q1:{q:'Top products by revenue last quarter',tag:'structured · SQL',path:'structured',src:'orders',dd:'sheet',
+   answer:'<b>Trail Hoodie</b> ($42,180), <b>Wool Beanie</b> ($28,900), <b>Base Layer</b> ($24,510)…',cites:['1,203 rows','product','revenue_cents'],
+   touched:{used:['product','revenue_cents','created_at','refunded'],rowsMatched:'1,203 of 4,215',matchRule:'created_at ≥ Apr 1 AND refunded = false'},
+   how:{why:'Aggregation over columns → SQL, no embeddings.',stages:[
+     {k:'sql',l:'Generated SQL',code:`<span class="kw">SELECT</span> product, <span class="kw">SUM</span>(revenue_cents)/100.0
+<span class="kw">FROM</span> orders <span class="kw">WHERE</span> refunded=<span class="kw">false</span>
+<span class="kw">GROUP BY</span> product <span class="kw">ORDER BY</span> 2 <span class="kw">DESC</span>;`},
+     {k:'model',l:'Sent to model',ss:'Schema + your Dictionary (revenue = cents/100, “sales” → revenue) + question. Data stayed local.'},
+     {k:'run',l:'Ran locally (read-only)',ss:'DuckDB · 610ms'}]}},
+ q2:{q:'Which orders complained about damage?',tag:'semantic · vectors',path:'semantic',src:'notes',dd:'none',
+   answer:'<b>7 orders</b> — clearest: #1042 (“arrived cracked”), #1108 (“box crushed”).',cites:['note #1042','note #1108','+5'],
+   touched:null,
+   how:{why:'Free-text meaning-match → semantic search.',stages:[
+     {k:'embed',l:'Embeddings',ss:'318 notes → vectors (1536-dim). The vector:',vec:'[ 0.0214, -0.0441, 0.1183, … ] +1531 dims'},
+     {k:'retrieve',l:'Vector search',ss:'Top matches: #1042 (0.83), #1108 (0.79)'},
+     {k:'model',l:'Sent to model',ss:'Only the 5 closest notes — not all 318.'}]}},
+ q3:{q:'Revenue by customer plan',tag:'structured · join',path:'structured',src:'orders+customers',dd:'db',
+   answer:'<b>Pro</b> $184,200 · <b>Team</b> $141,100 · <b>Free</b> $0.',cites:['orders','customers','join on customer_id'],
+   touched:{tables:[
+     {name:'orders',cols:[['order_id','',''],['customer_id','join','JOIN'],['revenue_cents','sel','SUM']]},
+     {name:'customers',cols:[['id','join','JOIN'],['plan','group','GROUP BY'],['name','','']]}
+   ],join:'orders.customer_id → customers.id'},
+   how:{why:'A join across a CSV and a database — DuckDB reads both.',stages:[
+     {k:'sql',l:'Generated SQL',code:`<span class="kw">SELECT</span> c.plan, <span class="kw">SUM</span>(o.revenue_cents)/100.0
+<span class="kw">FROM</span> orders o <span class="kw">JOIN</span> customers c <span class="kw">ON</span> c.id=o.customer_id
+<span class="kw">GROUP BY</span> c.plan;`},
+     {k:'run',l:'Ran locally',ss:'CSV + DB joined in-process · 44ms'}]}}
+};
+const LIFE={label:'revenue',layers:[
+  {n:'Table',k:'orders',rp:`revenue_cents <span class="dim">BIGINT</span> = <span class="h">8900</span>`},
+  {n:'Entity (ORM)',k:'OrderEntity',rp:`revenueCents: <span class="h">8900</span>`},
+  {n:'Business object',k:'domain',rp:`revenue: <span class="h">Money(89.00,"USD")</span>`},
+  {n:'DTO',k:'API',rp:`"revenue": <span class="h">{"amount":"89.00","currency":"USD"}</span>`},
+  {n:'View',k:'UI',rp:`price: <span class="h">"$89.00"</span>`},
+  {n:'User',k:'sees',rp:`<span class="h">$89.00</span>`}],
+  tf:['ORM maps column→field (BIGINT→Int).|—','cents→dollars, wrap in Money(currency)|⚠ off-by-100, the classic money bug','serialize Money→string amount+currency|⚠ never serialize money as a float','locale currency formatting|⚠ hard-coded "$" breaks other locales','rendered|—']};
+
+let state={env:'local',nav:'ask',dataset:'sales',src:'orders',ask:'q1',serveTab:'trace',mChat:'local',client:'claude-desktop',drawer:null,dtab:'how',push:{sources:['orders','notes'],target:'test'}};
+const $=s=>document.querySelector(s);
+function esc(s){return(''+(s==null?'':s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1700);}
+const curEnv=()=>ENVS.find(e=>e.id===state.env);
+
+const NAV=[['workspace','▤','Workspace'],['dictionary','⌗','Dictionary'],['ask','◇','Ask'],['sql','›_','SQL'],['serve','⇄','Serve · API/MCP'],['environments','☁','Environments'],['learn','◎','Learn']];
+const TITLES={workspace:['Workspace','your local data sources'],dictionary:['Dictionary','what your columns and entities mean — the semantic layer NL and search use'],ask:['Ask','natural-language questions, with the receipts'],sql:['SQL','write DuckDB SQL across every source'],serve:['Serve','expose your data over API + MCP'],environments:['Environments','local, and deployed Datera Servers'],learn:['Learn','how a value moves through the whole stack']};
+
+function renderShell(){
+  $('#envseg').innerHTML=ENVS.map(e=>`<button data-env="${e.id}" class="${e.id===state.env?'on':''}"><span class="d ${e.running?'':'off'}" style="background:${e.running?(e.kind==='local'?'var(--green)':'var(--blue)'):'#c9cfda'}"></span>${e.name}</button>`).join('');
+  const e=curEnv();
+  $('#banner').innerHTML=e.kind==='local'
+    ?`<div class="envbanner local">● Working <b>locally</b> — data on this machine, nothing exposed. <span class="mono">${esc(e.url)}</span></div>`
+    :`<div class="envbanner remote">☁ Connected to <b>Datera Server · ${esc(e.name)}</b> — this same UI is now driving a deployed instance. <span class="mono">${esc(e.url)}</span> · reachable by ${esc(e.reach)}</div>`;
+  $('#side').innerHTML=`<div class="grp">Client</div>${NAV.map(n=>`<div class="nav ${n[0]===state.nav?'on':''}" data-nav="${n[0]}"><span class="ic">${n[1]}</span><span class="tx">${n[2]}</span></div>`).join('')}<div class="foot"><span class="d" style="background:${e.kind==='local'?'var(--green)':'var(--blue)'}"></span>${esc(e.name)}</div>`;
+  $('#mtop').innerHTML=`<h1>${TITLES[state.nav][0]}</h1><span class="desc">${TITLES[state.nav][1]}</span>`;
+  const p=$('#pane');
+  p.innerHTML=state.nav==='workspace'?vWorkspace():state.nav==='dictionary'?vDict():state.nav==='ask'?vAsk():state.nav==='sql'?vSql():state.nav==='serve'?vServe():state.nav==='environments'?vEnv():vLearn();
+}
+/* ---- workspace ---- */
+function vWorkspace(){const ds=curDS();const s=SOURCES[state.src];
+  const rail=DATASETS.map(d=>`<div class="dsgroup ${d.id===state.dataset?'act':''}"><div class="dsh" data-dataset="${d.id}"><span class="dsn">${d.ungrouped?'⋯ ':''}${esc(d.name)}</span><span class="dsc">${d.sources.length}${d.rels.length?' · <span class="linked">linked</span>':''}</span></div>${d.sources.map(k=>`<div class="srcitem sub ${k===state.src?'on':''}" data-pick="${k}"><span class="ic">${SOURCES[k].ic}</span><div><div class="nm">${esc(SOURCES[k].name)}</div><div class="ct">${SOURCES[k].count}</div></div></div>`).join('')}</div>`).join('');
+  let rel;
+  if(ds.ungrouped)rel=`<div class="relempty">Not grouped — queries here run against one file at a time. Group it with files that share a key to query across them. <button class="btn" style="margin-top:8px" data-newds>+ Group into a dataset</button></div>`;
+  else if(!ds.rels.length&&!ds.sugg)rel=`<div class="relempty">No shared keys — these files don’t join, so queries stay within a single source. That’s exactly why they’re kept separate from <b>Store exports</b>.</div>`;
+  else rel=`${ds.rels.map(r=>`<div class="rel"><span class="rk">${esc(r.a)}</span><span class="ar">→</span><span class="rk">${esc(r.b)}</span><span class="rs ok">confirmed</span></div>`).join('')}${ds.sugg?`<div class="rel sugg"><span class="rk">${esc(ds.sugg.a)}</span><span class="ar">→</span><span class="rk">${esc(ds.sugg.b)}</span><span class="rs">suggested</span><button class="relconfirm" data-confirmrel>Confirm link</button><div class="relwhy">Datera found this: ${esc(ds.sugg.why)}</div></div>`:''}`;
+  return `<div class="wsgrid"><div class="card" style="padding:7px"><div style="font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);padding:8px 9px 3px;display:flex;justify-content:space-between">Datasets <span data-newds style="color:var(--indigo);cursor:pointer">+ new</span></div>${rail}</div>
+    <div>
+      <div class="dsbar"><div><div class="dsbn">${esc(ds.name)}</div><div class="dsbd">${esc(ds.desc)}</div></div><span class="scope">${ds.rels.length?'joins allowed here':'single-source only'}</span></div>
+      <div class="relpanel"><div class="rp-h">Relationships${ds.rels.length?` · ${ds.rels.length} key`:''}</div>${rel}</div>
+      <div style="margin:16px 0 8px">${s.schema.map(c=>`<span class="schip">${esc(c[0])} <span class="ty">${esc(c[1])}</span></span>`).join('')}</div>
+      <div class="prev"><table><thead><tr>${s.cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${s.rows.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      <div class="readonly">● ${esc(s.name)} · read-only · each dataset is its own DuckDB schema, so a cross-dataset join can’t happen by accident</div>
+    </div></div>`;
+}
+/* ---- ask ---- */
+function vDict(){const s=SOURCES[state.src];const m=metaOf(state.src);
+  const chips=DATASETS.map(d=>`<span class="dctag">${esc(d.name)}</span>`+d.sources.map(k=>`<button class="dcsrc ${k===state.src?'on':''}" data-dictsrc="${k}">${SOURCES[k].ic} ${esc(SOURCES[k].name)}</button>`).join('')).join('');
+  const rows=s.schema.map(sc=>{const col=sc[0],ty=sc[1];const c=(m.cols&&m.cols[col])||{state:'undefined'};
+    return `<tr><td class="cn">${esc(col)} <small>${esc(ty)}</small></td>
+      <td>${c.meaning?esc(c.meaning):'<span class="ph">— no meaning yet —</span>'}${c.enums?`<div class="enums">${c.enums.map(e=>`<span class="enum"><b>${esc(e[0])}</b> ${esc(e[1])}</span>`).join('')}</div>`:''}</td>
+      <td>${c.aka?c.aka.split(',').map(a=>`<span class="alias">${esc(a.trim())}</span>`).join(''):'<span class="ph">—</span>'}</td>
+      <td class="mono2">${c.unit?esc(c.unit):'—'}</td>
+      <td>${c.role?`<span class="role2 ${c.role}">${esc(c.role)}</span>`:'—'}</td>
+      <td>${c.state==='undefined'?'<span class="ph">—</span>':`<span class="mst ${c.state==='confirmed'?'ok':'sg'}">${c.state}</span>`}</td></tr>`;}).join('');
+  return `<div class="dcpick">${chips}<button class="btn" style="margin-left:auto" data-autodraft>✦ Auto-draft meanings</button></div>
+    <div class="entcard"><div><div class="entn">${esc(s.name.split('.')[0])} <span class="mst ${m.entity.state==='confirmed'?'ok':'sg'}">${m.entity.state}</span></div><div class="entd">${esc(m.entity.def)}</div></div>
+      <div class="entmeta"><span>grain: <b>${esc(m.entity.grain)}</b></span><span>key: <b>${esc(m.entity.pk)}</b></span></div></div>
+    <div class="dicttbl"><table><thead><tr><th>Column</th><th>Meaning</th><th>Also called (for NL)</th><th>Unit</th><th>Role</th><th>State</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="dcpay"><b>Why this matters:</b> these definitions get injected into the model’s context for NL→SQL and semantic search. Because <span class="mono">revenue_cents</span> is defined as money in cents and <i>also called</i> “sales,” the question <i>“what were my sales?”</i> correctly becomes <span class="mono">SUM(revenue_cents)/100</span> — and you can watch it get used in <b>Ask → How it was made</b>. Vague or missing meanings are the #1 reason NL→SQL guesses wrong. Auto-draft proposes them; you confirm.</div>`;
+}
+function vAsk(){const a=QUESTIONS[state.ask];const ds=curDS();
+  const ansHtml=a?`<div class="card ans" style="margin-bottom:16px"><div class="aq">${esc(a.q)}</div><div class="ab"><div class="at">${a.answer}</div><div style="margin-top:10px">${a.cites.map(c=>`<span class="cite">✓ ${esc(c)}</span>`).join('')}</div></div>
+    <div class="af"><button class="drillbtn" data-how="${state.ask}">◐ How it was made</button>${a.dd!=='none'?`<button class="drillbtn" data-touched="${state.ask}">▦ What it touched</button>`:''}<span class="pathmini ${a.path}">${a.path}</span></div></div>`:'';
+  return `<div class="qscope">Querying <b>${esc(ds.name)}</b> · ${ds.sources.length} source${ds.sources.length>1?'s':''}${ds.rels.length?` · ${ds.rels.length} join key, so answers can span these sources`:` · single source, no cross-joins`}.</div><div class="askbar"><input placeholder="Ask about your data…" value="${a?esc(a.q):''}"/><button class="btn p">Ask</button></div>${ansHtml}
+    <div style="font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px">Try</div>
+    ${Object.keys(QUESTIONS).map(k=>`<button class="sq" data-ask="${k}">${esc(QUESTIONS[k].q)}<span class="tag">${QUESTIONS[k].tag}</span></button>`).join('')}`;
+}
+/* ---- sql ---- */
+function vSql(){const ds=curDS();return `<div class="qscope">SQL runs across <b>${esc(ds.name)}</b> only — the ${ds.sources.length} source(s) in this dataset’s schema. Other datasets aren’t visible here.</div><div class="card" style="overflow:hidden"><div style="display:flex;justify-content:space-between;padding:9px 13px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--ink3)"><span>DuckDB SQL · across all sources</span><button class="btn p" style="padding:5px 12px" data-runsql>▶ Run</button></div>
+  <textarea style="width:100%;border:0;outline:none;padding:13px;font-family:var(--mono);font-size:12px;min-height:110px;resize:vertical">SELECT c.plan, COUNT(*) AS customers, SUM(o.revenue_cents)/100.0 AS revenue
+FROM orders o JOIN customers c ON c.id = o.customer_id
+GROUP BY c.plan ORDER BY revenue DESC;</textarea></div>
+  <div id="sqlres"><div class="readonly" style="margin-top:12px">Same engine as Ask · read-only · click Run, then “What it touched” to see the tables and columns involved.</div></div>`;
+}
+/* ---- serve ---- */
+function vServe(){
+  const sub=`<div class="subnav">${[['models','Models'],['connect','Connect'],['trace','Trace']].map(t=>`<button data-serve="${t[0]}" class="${state.serveTab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div>`;
+  let b='';
+  if(state.serveTab==='models'){
+    const o=(k,t,d,tag)=>`<div class="opt ${state.mChat===k?'on':''}" data-mchat="${k}"><span class="radio"></span><div><div class="ot">${t}</div><div class="od">${d}</div></div><span class="tg ${tag[0]}">${tag[1]}</span></div>`;
+    b=`<div class="card" style="padding:15px;max-width:520px"><div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:10px">Chat model · NL→SQL</div>
+      ${o('local','Local embedded','Bundled model, runs on the machine. No key.',['free','no key'])}
+      ${o('claude','Anthropic (your key)','Best SQL on messy schemas.',['key','BYOK'])}
+      ${o('openai','OpenAI (your key)','Bring an OpenAI key.',['key','BYOK'])}
+      <div style="font-size:12px;color:var(--ink3);margin-top:8px">Embeddings default to <b>local</b> even with a BYOK chat model — cheap on-device, keeps text off the network.</div></div>`;
+  } else if(state.serveTab==='connect'){
+    const CFG={'claude-desktop':`<span class="c">// claude_desktop_config.json</span>
+<span class="k">"datera"</span>: { <span class="k">"command"</span>: <span class="s">"datera"</span>, <span class="k">"args"</span>: [<span class="s">"--mcp"</span>, <span class="s">"--workspace"</span>, <span class="s">"~/data"</span>] }`,
+      'cursor':`<span class="c">// HTTP transport (remote or local)</span>
+<span class="k">"datera"</span>: { <span class="k">"url"</span>: <span class="s">"${curEnv().kind==='local'?'http://localhost:7391/mcp':'https://'+curEnv().url+'/mcp'}"</span>,
+  <span class="k">"headers"</span>: { <span class="k">"Authorization"</span>: <span class="s">"Bearer dtra_…"</span> } }`};
+    b=`<p style="color:var(--ink2);max-width:66ch;margin:0 0 14px">Point an agent at ${curEnv().kind==='local'?'your local Datera':'this Datera Server'}. Two transports: <b>stdio</b> (local) or <b>HTTP/SSE</b> (${curEnv().kind==='local'?'local or remote':'remote'}), both with the auto-generated tools <span class="mono">query_orders</span>, <span class="mono">search_notes</span>, <span class="mono">describe_schema</span>.</p>
+      <div class="subnav">${['claude-desktop','cursor'].map(c=>`<button data-client="${c}" class="${state.client===c?'on':''}">${c==='claude-desktop'?'Claude Desktop (stdio)':'Cursor / HTTP'}</button>`).join('')}</div>
+      <div class="cfg">${CFG[state.client]}</div>`;
+  } else {
+    const local=state.mChat==='local';
+    const hops=[['agent','Agent','calls tool','net'],['transport','MCP','received','net'],['server','Datera','auth · read-only','io'],['router','Router','→ structured','io'],['model',local?'Local model':'Claude API',local?'on-device':'your key','model'],['engine','DuckDB','runs SQL','io'],['data','orders.csv','1,203 rows','io'],['response','Response','back to agent','net']];
+    b=`<p style="color:var(--ink2);max-width:70ch;margin:0 0 12px">Every request is traceable end to end. The <b>model</b> hop changes with your choice — local is one on-device step; BYOK adds a network hop to your provider.</p>
+      <div class="flow">${hops.map((h,i)=>`<div class="node ${h[0]==='model'?'model':''}"><div class="ni">${esc(h[0])}</div><div class="nn">${esc(h[1])}</div><div class="ms">${esc(h[2])}</div></div>${i<hops.length-1?'<div class="conn">→</div>':''}`).join('')}</div>
+      <div class="readonly">● return flows back the same path · ${local?'all local, $0':'one network hop to your model'} · this trace doubles as your audit log</div>`;
+  }
+  return sub+b;
+}
+/* ---- environments ---- */
+function vEnv(){
+  const cards=ENVS.map(e=>`<div class="envcard ${e.id===state.env?'active':''}"><div class="eh"><div class="en">${e.kind==='local'?'💻':'☁'} ${esc(e.name)}</div><span class="kind ${e.kind}">${e.kind}</span></div>
+    <div class="st"><span class="dot ${e.running?'run':'off'}"></span>${esc(e.status)}</div>
+    <div class="rowk"><span>URL</span><span class="v">${esc(e.url)}</span></div>
+    <div class="rowk"><span>Target</span><span class="v">${esc(e.target)}</span></div>
+    <div class="rowk"><span>Reachable by</span><span class="v">${esc(e.reach)}</span></div>
+    <button class="ebtn ${e.running?'':'deploy'}" data-envopen="${e.id}">${e.running?(e.id===state.env?'Viewing':'Open'):'Deploy →'}</button></div>`).join('');
+  return `<p style="color:var(--ink2);max-width:74ch;margin:0 0 16px"><b>Datera</b> is your local dev environment — fully working on its own. When you’re ready, <b>push</b> a workspace to a <b>Datera Server</b> environment so others can reach the API and MCP. Same core, deployed.</p>
+    <div class="envgrid">${cards}</div>
+    <div class="pushbox"><h3>Push to an environment</h3><p>Promote your local workspace to a deployed Datera Server — like shipping from dev to test or prod.</p>
+      <div class="pushrow"><span class="lb">Sources</span>${Object.keys(SOURCES).map(k=>`<span class="selpill ${state.push.sources.includes(k)?'on':''}" data-pushsrc="${k}">${SOURCES[k].ic} ${esc(SOURCES[k].name)}</span>`).join('')}</div>
+      <div class="pushrow"><span class="lb">Expose</span><span class="selpill on">API</span><span class="selpill on">MCP</span><span class="selpill">read-only</span></div>
+      <div class="pushrow"><span class="lb">Target</span>${ENVS.filter(e=>e.kind==='server').map(e=>`<span class="selpill ${state.push.target===e.id?'on':''}" data-pushtgt="${e.id}">${esc(e.name)} · ${esc(e.target)}</span>`).join('')}</div>
+      <button class="btn p" data-dopush>⇧ Push to ${esc(ENVS.find(e=>e.id===state.push.target).name)}</button>
+      <div class="diag"><div class="box"><b>Datera</b><small>local client</small></div><span class="ar">— push →</span><div class="box"><b>Datera Server</b><small>${esc(ENVS.find(e=>e.id===state.push.target).target)}</small></div><span class="ar">— serves →</span><div class="box"><b>API + MCP</b><small>others connect</small></div></div>
+    </div>`;
+}
+/* ---- learn ---- */
+function vLearn(){
+  let h='<p style="color:var(--ink2);max-width:74ch;margin:0 0 14px">A value isn’t just a table cell — it transforms at every layer, and now flows through NL, semantic, and MCP lanes too. Following <b>revenue</b> from the row to the screen:</p>';
+  LIFE.layers.forEach((L,i)=>{
+    h+=`<div class="layer"><div class="lh"><span class="ln">${L.n}</span><span class="lk">${L.k}</span></div><div class="rp">${L.rp}</div></div>`;
+    if(i<LIFE.layers.length-1){const t=LIFE.tf[i].split('|');h+=`<div class="tf2"><span class="ar">↓</span> ${t[0]}${t[1]!=='—'?`<span class="bug">${t[1]}</span>`:''}</div>`;}
+  });
+  h+=`<div class="readonly" style="margin-top:14px">● The NL, semantic, and MCP lanes read through the same domain rules — only text takes the vector path. (Full teaching view is its own module.)</div>`;
+  return h;
+}
+/* ---- drawer (ask drill-ins) ---- */
+function openDrawer(qk,tab){state.drawer=qk;state.dtab=tab;const a=QUESTIONS[qk];
+  const how=`<span class="pbadge ${a.path}">${a.path==='structured'?'Structured · NL→SQL':'Semantic · vectors'}</span><div style="font-size:12.5px;color:var(--ink2);margin-bottom:14px">${a.how.why}</div>
+    ${a.how.stages.map((s,i)=>`<div class="st2"><div class="sl">${i+1}. ${esc(s.l)}<span class="k">${esc(s.k)}</span></div>${s.ss?`<div class="ss">${s.ss}</div>`:''}${s.code?`<pre>${s.code}</pre>`:''}${s.vec?`<div class="vec">${esc(s.vec)}</div>`:''}</div>`).join('')}`;
+  let touched='';
+  if(!a.touched)touched='<div style="color:var(--ink3);font-size:13px">No data drill-down for a semantic answer — it matched note meanings, not columns.</div>';
+  else if(a.dd==='sheet'){const t=a.touched;const s=SOURCES.orders;
+    touched=`<div class="dd-h">Columns read & rows matched · orders.csv</div>
+      <div class="legend"><span class="lg"><span class="sw used"></span>column used</span><span class="lg"><span class="sw match"></span>row matched</span><span class="lg"><span class="sw dim"></span>not used</span></div>
+      <div class="ssheet"><table><thead><tr>${s.cols.map(c=>`<th class="${t.used.includes(c)?'used':''}">${esc(c)}</th>`).join('')}</tr></thead><tbody>${s.rows.map(r=>{const matched=r[5]==='false'&&r[4]>='2026-04-01';return `<tr class="${matched?'match':''}">${r.map((x,ci)=>`<td class="${t.used.includes(s.cols[ci])?'usedcol':''}">${esc(x)}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>
+      <div class="ddnote"><b>${esc(t.rowsMatched)}</b> rows matched — filter: <span class="mono">${esc(t.matchRule)}</span>. Four columns were read; two were ignored. This is exactly what the query scanned.</div>`;
+  } else if(a.dd==='db'){const t=a.touched;
+    touched=`<div class="dd-h">Tables & columns involved · the join</div>
+      <div class="dbdrill">${t.tables.map((tb,i)=>`${i>0?`<div class="joinline"><div class="ar">⋈</div>join</div>`:''}<div class="dbtbl"><div class="tt">${esc(tb.name)}</div>${tb.cols.map(c=>`<div class="cc ${c[1]?'used':''}"><span>${esc(c[0])}</span>${c[2]?`<span class="role ${c[1]}">${esc(c[2])}</span>`:''}</div>`).join('')}</div>`).join('')}</div>
+      <div class="ddnote"><b>Join:</b> <span class="mono">${esc(t.join)}</span>. Colored tags show each column’s role — join key, group-by, or aggregated. Only these columns were touched.</div>`;
+  }
+  $('#drawer').innerHTML=`<div class="dh"><div class="t">${esc(a.q)}</div><button class="x" data-close>×</button></div>
+    <div class="dsub"><button data-dtab="how" class="${state.dtab==='how'?'on':''}">◐ How it was made</button>${a.dd!=='none'?`<button data-dtab="touched" class="${state.dtab==='touched'?'on':''}">▦ What it touched</button>`:''}</div>
+    <div class="db">${state.dtab==='touched'?touched:how}</div>`;
+  $('#scrim').classList.add('show');$('#drawer').classList.add('show');
+}
+function closeDrawer(){$('#scrim').classList.remove('show');$('#drawer').classList.remove('show');state.drawer=null;}
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-env],[data-nav],[data-src],[data-ask],[data-how],[data-touched],[data-dtab],[data-close],[data-serve],[data-mchat],[data-client],[data-runsql],[data-envopen],[data-pushsrc],[data-pushtgt],[data-dopush],[data-addsrc],[data-dataset],[data-pick],[data-newds],[data-confirmrel],[data-dictsrc],[data-autodraft]');
+  if(!t)return;
+  if(t.dataset.env){state.env=t.dataset.env;if(!curEnv().running){toast('Production isn’t deployed yet — deploy it from Environments');state.env='local';}renderShell();}
+  else if(t.dataset.nav){state.nav=t.dataset.nav;renderShell();}
+  else if(t.dataset.src){state.src=t.dataset.src;renderShell();}
+  else if(t.dataset.dataset){state.dataset=t.dataset.dataset;state.src=curDS().sources[0];renderShell();}
+  else if(t.dataset.pick){state.src=t.dataset.pick;state.dataset=datasetOf(t.dataset.pick);renderShell();}
+  else if(t.dataset.dictsrc){state.src=t.dataset.dictsrc;state.dataset=datasetOf(t.dataset.dictsrc);renderShell();}
+  else if(t.hasAttribute('data-autodraft')){toast('Drafted meanings from column names + sample values — review and confirm each');}
+  else if(t.hasAttribute('data-newds')){toast('Create a dataset — group sources that share a key');}
+  else if(t.hasAttribute('data-confirmrel')){const d=curDS();if(d.sugg){d.rels.push({a:d.sugg.a,b:d.sugg.b});d.sugg=null;}renderShell();toast('Linked — these sources now join');}
+  else if(t.dataset.ask){state.ask=t.dataset.ask;renderShell();}
+  else if(t.dataset.how){openDrawer(t.dataset.how,'how');}
+  else if(t.dataset.touched){openDrawer(t.dataset.touched,'touched');}
+  else if(t.dataset.dtab){state.dtab=t.dataset.dtab;openDrawer(state.drawer,t.dataset.dtab);}
+  else if(t.hasAttribute('data-close')){closeDrawer();}
+  else if(t.dataset.serve){state.serveTab=t.dataset.serve;renderShell();}
+  else if(t.dataset.mchat){state.mChat=t.dataset.mchat;renderShell();toast('Chat model: '+t.dataset.mchat);}
+  else if(t.dataset.client){state.client=t.dataset.client;renderShell();}
+  else if(t.hasAttribute('data-runsql')){$('#sqlres').innerHTML='<div class="prev" style="margin-top:12px"><table><thead><tr><th>plan</th><th>customers</th><th>revenue</th></tr></thead><tbody><tr><td>Pro</td><td>269</td><td>$184,200</td></tr><tr><td>Team</td><td>141</td><td>$141,100</td></tr></tbody></table></div><div class="readonly" style="margin-top:8px">● 3 rows · 44ms · read-only · joined orders.csv + customers.db</div>';toast('Ran locally');}
+  else if(t.dataset.envopen){const en=ENVS.find(x=>x.id===t.dataset.envopen);if(!en.running){toast('Deploying Datera Server to '+en.target+'…');return;}state.env=t.dataset.envopen;state.nav='workspace';renderShell();}
+  else if(t.dataset.pushsrc){const k=t.dataset.pushsrc;const i=state.push.sources.indexOf(k);if(i<0)state.push.sources.push(k);else state.push.sources.splice(i,1);renderShell();}
+  else if(t.dataset.pushtgt){state.push.target=t.dataset.pushtgt;renderShell();}
+  else if(t.hasAttribute('data-dopush')){toast('Pushed '+state.push.sources.length+' source(s) → Datera Server · '+ENVS.find(e=>e.id===state.push.target).name);}
+  else if(t.hasAttribute('data-addsrc')){toast('Add files / folder / database');}
+});
+$('#scrim').addEventListener('click',closeDrawer);
+renderShell();
+</script>
+</body>
+</html>

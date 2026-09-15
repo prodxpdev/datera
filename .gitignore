@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+.DS_Store
+fixtures/generated/
+apps/desktop/.vite/
+apps/desktop/release/
+coverage/
+vendor/
+docs/*.png

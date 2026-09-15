@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # Extensions are staged once per job into the repo, never fetched at query time.
+  DATERA_EXTENSION_DIR: ${{ github.workspace }}/vendor/duckdb-extensions
+
+jobs:
+  # macOS, Windows and Linux all run: macOS and Windows are shipping desktop targets, and
+  # Linux is both a shipping target and the runtime Datera Server will use (decision D-14).
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Stage DuckDB extensions
+        run: pnpm run stage-extensions
+
+      - run: pnpm run lint
+
+      - run: pnpm exec tsc -b
+
+      - name: Build the desktop shell
+        run: pnpm --filter @datera/desktop run build
+
+      # Electron needs a display on Linux. xvfb-run wraps the whole suite because the
+      # Playwright-Electron tests launch a real window.
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum pnpm exec vitest run
+
+      - name: Test (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: pnpm exec vitest run
+
+  # The P1-11 integration half. Split into its own job so the matrix above stays fast, and
+  # so a database outage cannot be mistaken for a cross-platform failure.
+  databases:
+    name: live Postgres + MySQL
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: datera
+          POSTGRES_PASSWORD: pg_secret_pw
+          POSTGRES_DB: datera_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U datera"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: datera
+          MYSQL_PASSWORD: my_secret_pw
+          MYSQL_DATABASE: datera_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run stage-extensions
+      - run: pnpm exec tsc -b
+
+      - name: Seed the databases
+        run: |
+          PGPASSWORD=pg_secret_pw psql -h 127.0.0.1 -U datera -d datera_test -c \
+            "CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT, plan TEXT, ltv_cents BIGINT);
+             INSERT INTO customers VALUES ('c-01','Northwind','Pro',1842000) ON CONFLICT DO NOTHING;"
+          mysql -h 127.0.0.1 -P 3306 -u datera -pmy_secret_pw datera_test -e \
+            "CREATE TABLE IF NOT EXISTS customers (id VARCHAR(16) PRIMARY KEY, name VARCHAR(64), plan VARCHAR(32), ltv_cents BIGINT);
+             INSERT IGNORE INTO customers VALUES ('c-01','Northwind','Pro',1842000);"
+
+      # These tests skip loudly rather than silently when no server is reachable, so a
+      # failure to connect here shows up as skipped assertions in the log, not as a pass.
+      - run: pnpm exec vitest run packages/core/test/database.test.ts

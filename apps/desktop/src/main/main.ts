@@ -1,0 +1,187 @@
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Datera, DateraError, type AddSourceRequest, type PreviewOptions } from '@datera/core';
+import {
+  ConsoleLogger,
+  NodeFileSystem,
+  SystemClock,
+  nodeDuckDBDriver,
+  resolveExtensionDirectory,
+} from '@datera/node-runtime';
+import { IPC, type SerialisedError } from '../shared/contract.js';
+import { SafeStorageSecretStore, secretStorePath } from './secret-store.js';
+
+const here = resolve(fileURLToPath(import.meta.url), '..');
+const distRoot = resolve(here, '..');
+const appRoot = resolve(distRoot, '..');
+
+/**
+ * The Electron main process — a thin host over @datera/core (spec §2, invariant §1.7).
+ *
+ * Main owns the single core instance. The renderer never imports the core, never touches
+ * Node, and reaches the engine only through the typed IPC contract. That keeps the core
+ * out of a sandboxed browser context and means the same contract can later be fulfilled
+ * by an HTTP client pointed at a Datera Server (acceptance §12.10).
+ */
+
+let datera: Datera | null = null;
+let window: BrowserWindow | null = null;
+
+function defaultWorkspacePath(): string {
+  const fromEnv = process.env['DATERA_WORKSPACE'];
+  if (fromEnv !== undefined && fromEnv.length > 0) return resolve(fromEnv);
+  return join(app.getPath('userData'), 'workspaces', 'default');
+}
+
+async function openCore(): Promise<Datera> {
+  const workspacePath = defaultWorkspacePath();
+  return Datera.open({
+    workspacePath,
+    driver: nodeDuckDBDriver(),
+    ports: {
+      fs: new NodeFileSystem(),
+      clock: new SystemClock(),
+      logger: new ConsoleLogger({ minLevel: 'info' }),
+      secrets: new SafeStorageSecretStore(secretStorePath(workspacePath)),
+    },
+    extensionDirectory: resolveExtensionDirectory(app.isPackaged ? undefined : appRoot),
+    appVersion: app.getVersion(),
+  });
+}
+
+function serialiseError(e: unknown): SerialisedError {
+  if (e instanceof DateraError) {
+    return {
+      __dateraError: true,
+      code: e.code,
+      message: e.message,
+      details: { ...e.details },
+    };
+  }
+  return {
+    __dateraError: true,
+    code: 'UNKNOWN',
+    message: e instanceof Error ? e.message : String(e),
+    details: {},
+  };
+}
+
+/**
+ * Wrap a handler so a thrown DateraError arrives at the renderer with its code intact.
+ *
+ * Electron reduces a thrown Error to its message across IPC, which would lose the code the
+ * UI needs to distinguish "this is read-only" from "that file moved".
+ */
+function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Promise<T>): void {
+  ipcMain.handle(channel, async (_event, ...args: unknown[]) => {
+    try {
+      return { ok: true as const, value: await fn(...(args as A)) };
+    } catch (e) {
+      return { ok: false as const, error: serialiseError(e) };
+    }
+  });
+}
+
+function core(): Datera {
+  if (datera === null) throw new Error('The Datera engine is not open yet.');
+  return datera;
+}
+
+function registerHandlers(): void {
+  handle(IPC.engineInfo, async () => core().engineInfo());
+  handle(IPC.listDatasets, async () => core().listDatasets());
+  handle(IPC.listSources, async () => core().listSources());
+  handle(IPC.addSource, async (request: AddSourceRequest) => core().addSource(request));
+  handle(IPC.removeSource, async (id: string) => core().removeSource(id));
+  handle(IPC.getSchema, async (sourceId: string) => core().getSchema(sourceId));
+  handle(IPC.preview, async (sourceId: string, options?: PreviewOptions) =>
+    core().preview(sourceId, options ?? {}),
+  );
+  handle(IPC.query, async (datasetId: string, sql: string) => core().query(datasetId, sql));
+
+  handle(IPC.pickFiles, async () => {
+    if (window === null) return [];
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Connect data',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Data', extensions: ['csv', 'tsv', 'json', 'ndjson', 'jsonl', 'parquet', 'xlsx', 'sqlite', 'db'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+}
+
+function createWindow(): void {
+  window = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: '#fbfcfd',
+    title: 'Datera',
+    webPreferences: {
+      // The three that matter. The renderer is a browser context with no Node, no direct
+      // access to the core, and no ability to reach anything except the preload bridge.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: join(distRoot, 'preload', 'preload.cjs'),
+    },
+  });
+
+  void window.loadFile(join(distRoot, 'renderer', 'index.html'));
+  window.on('closed', () => {
+    window = null;
+  });
+}
+
+app.whenReady().then(async () => {
+  // A local-first tool has no reason to let its own UI reach the network. This is defence
+  // in depth for invariant §1.6, not the mechanism: the engine's extension handling is.
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+    callback({ cancel: !details.url.startsWith('file://') && !details.url.startsWith('devtools://') });
+  });
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': ["default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"],
+      },
+    });
+  });
+
+  registerHandlers();
+
+  try {
+    datera = await openCore();
+  } catch (e) {
+    dialog.showErrorBox(
+      'Datera could not open its workspace',
+      e instanceof Error ? e.message : String(e),
+    );
+    app.quit();
+    return;
+  }
+
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+}).catch((e: unknown) => {
+  console.error('Failed to start Datera', e);
+  app.quit();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  void datera?.close();
+  datera = null;
+});

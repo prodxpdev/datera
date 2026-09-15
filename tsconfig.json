@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/node-runtime"
+    },
+    {
+      "path": "./packages/testkit"
+    },
+    {
+      "path": "./apps/desktop"
+    }
+  ]
+}

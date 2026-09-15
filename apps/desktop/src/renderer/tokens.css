@@ -1,0 +1,46 @@
+/*
+ * Design tokens lifted verbatim from datera-app-prototype.html (decision D-10).
+ *
+ * Copied rather than re-derived so the shipped app and the prototype cannot drift: when
+ * the prototype is the agreed reference for look and feel, re-picking "close enough"
+ * colours is how a build stops matching the thing it was approved against.
+ */
+:root {
+  --bg: #fbfcfd;
+  --ink: #12161c;
+  --ink2: #414855;
+  --ink3: #7b828f;
+  --line: #e6e8ee;
+  --line2: #d7dae2;
+  --card: #fff;
+  --indigo: #4f46e5;
+  --indigo-bg: #edecfd;
+  --indigo-line: #c9c5f6;
+  --green: #0d7a52;
+  --green-bg: #e3f2eb;
+  --green-line: #b6ddca;
+  --violet: #6d3fc4;
+  --violet-bg: #efeafc;
+  --amber: #8a6100;
+  --amber-bg: #fdf3e0;
+  --amber-line: #eed9ad;
+  --red: #b3261e;
+  --red-bg: #fdecea;
+  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sh: 0 1px 2px rgba(18, 22, 28, .05), 0 3px 12px rgba(18, 22, 28, .05);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; }
