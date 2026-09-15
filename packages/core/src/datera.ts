@@ -61,6 +61,12 @@ import {
   applyNormalization, proposeEnums, proposeNormalization,
   type EnumProposal, type NormalizationProposal,
 } from './cow/normalize.js';
+import { toolsFor, toolSuffix, type ToolContext, type ToolDefinition } from './serve/tools.js';
+import { connectConfig as buildConnectConfig, type ClientId, type ConnectConfig, type ConfigOptions } from './serve/configs.js';
+import {
+  DEFAULT_RETENTION, migrateTraceLog, pruneTraceLog as prune, queryTraceLog as runTraceQuery,
+  recordTrace, type RetentionPolicy, type TraceOrigin, type TraceQuery, type TraceRecord,
+} from './serve/trace-log.js';
 import {
   applyWrite, assertWriteInDataset, classifyWrite, grant as grantWriteIn, isGranted,
   migrateWrites, previewWrite, restore, revoke as revokeWriteIn,
@@ -87,7 +93,7 @@ import { detectLocalRuntimes, type DetectedRuntime } from './models/detect.js';
 import { AnthropicChatModel } from './models/anthropic.js';
 import { OpenAICompatibleChatModel } from './models/openai-compatible.js';
 import { describeModel, type ChatModel, type ModelDescriptor } from './models/types.js';
-import { TraceBuilder } from './query/trace.js';
+import { TraceBuilder, type Trace } from './query/trace.js';
 import { buildSchemaContext } from './query/context.js';
 import { extractSql } from './query/sql-extract.js';
 import { OfflineHttp, type HttpPort } from './ports/http.js';
@@ -139,6 +145,16 @@ export interface QueryResult {
 /** Where the chosen chat model is remembered between launches. */
 const CHAT_MODEL_SETTING = 'model.chat';
 const EMBEDDING_MODEL_SETTING = 'model.embedding';
+const TRACE_PAYLOADS_SETTING = 'trace.capturePayloads';
+const TRACE_RETENTION_SETTING = 'trace.retention';
+
+/** What a served tool call returns, in the shape MCP expects. */
+export interface ToolResult {
+  readonly content: readonly { type: 'text'; text: string }[];
+  readonly isError: boolean;
+  /** The end-to-end record for this call (§12.9). */
+  readonly trace?: Trace | undefined;
+}
 /** Keychain entry holding the API key for a remote provider. One per provider. */
 export const apiKeySecretName = (provider: string): string => `model.apiKey.${provider}`;
 
@@ -215,6 +231,7 @@ export class Datera {
     await migrateEmbeddings(engine);
     await migrateVersions(engine);
     await migrateWrites(engine);
+    await migrateTraceLog(engine);
 
     const datera = new Datera(
       engine,
@@ -904,7 +921,7 @@ export class Datera {
       (r) => r.state === 'confirmed',
     );
 
-    return ask({
+    const result = await ask({
       engine: this.engine,
       model,
       datasetId,
@@ -923,6 +940,17 @@ export class Datera {
       now: () => this.ports.clock.now(),
       monotonicMs: () => this.ports.clock.monotonicMs(),
     });
+
+    await this.record(result.trace, {
+      origin: 'ask',
+      rowsReturned: result.rows.length,
+      ok: result.answerable,
+      // A decline is recorded as a failure with its reason: "Datera would not answer this,
+      // and here is why" is exactly the kind of thing the log exists to make searchable.
+      ...(result.answerable || result.flag === null ? {} : { error: result.flag }),
+    });
+
+    return result;
   }
 
   /**
@@ -1593,6 +1621,230 @@ export class Datera {
       confirmedAt: String(row[4]),
       undoneAt: row[5] === null ? null : String(row[5]),
     }));
+  }
+
+  // ------------------------------------------------------------- serve (§8)
+
+  /**
+   * The tools an agent can call.
+   *
+   * Generated from the datasets that exist right now, and deliberately conditional: a
+   * search tool appears only where something is embedded, and a mutation tool only where
+   * writes are granted. Advertising a tool that will fail is worse than omitting it — the
+   * agent has already committed to a plan by the time it finds out.
+   */
+  async listTools(): Promise<readonly ToolDefinition[]> {
+    const datasets = await this.catalog.listDatasets();
+    const contexts: ToolContext[] = [];
+
+    for (const dataset of datasets) {
+      contexts.push({
+        dataset,
+        hasEmbeddings: (await embeddedColumns(this.engine, dataset.id)).length > 0,
+        canWrite: await isGranted(this.engine, dataset.id),
+      });
+    }
+
+    return toolsFor(contexts);
+  }
+
+  /**
+   * Execute a tool call, producing the end-to-end trace §12.9 requires.
+   *
+   * Every guard that protects the UI protects this: read-only, the dataset boundary, and
+   * the write gate. A request arriving over MCP is not trusted more than one typed into
+   * the SQL editor.
+   */
+  async callTool(name: string, args: Readonly<Record<string, unknown>>): Promise<ToolResult> {
+    const trace = new TraceBuilder(
+      this.makeId(), 'unknown', name,
+      this.ports.clock.now().toISOString(), () => this.ports.clock.monotonicMs(),
+    );
+    trace.add({ kind: 'parse', label: 'Tool call received', detail: `${name}(${Object.keys(args).join(', ')})` });
+
+    const fail = async (message: string, datasetId = 'unknown'): Promise<ToolResult> => {
+      const built = trace.build('structured', false);
+      await this.record(built, { origin: 'tool', rowsReturned: 0, ok: false, error: message });
+      void datasetId;
+      return { content: [{ type: 'text', text: message }], isError: true, trace: built };
+    };
+
+    const datasets = await this.catalog.listDatasets();
+
+    if (name === 'describe_schema') {
+      const datasetId = typeof args['dataset'] === 'string' ? args['dataset'] : DEFAULT_DATASET_ID;
+      const dataset = datasets.find((d) => d.id === datasetId);
+      if (dataset === undefined) return fail(`Unknown dataset "${datasetId}".`);
+
+      const schemas = await this.datasetSchemas(dataset.id, dataset.schemaName);
+      const dictionaries: SourceDictionary[] = [];
+      for (const source of (await this.listSources()).filter((s) => s.datasetId === dataset.id)) {
+        dictionaries.push(await this.getDictionary(source.id));
+      }
+
+      // Only this dataset's schema, exactly as §12.4 requires for the model — an agent
+      // gets no broader a view than the NL path does.
+      const text = buildSchemaContext(schemas, { dictionaries });
+      trace.add({ kind: 'schema', label: 'Schema described', detail: text });
+
+      const built = trace.build('structured', true);
+      await this.record(built, { origin: 'tool', rowsReturned: schemas.length, ok: true });
+      return { content: [{ type: 'text', text }], isError: false, trace: built };
+    }
+
+    const dataset = datasets.find((d) => name.endsWith(`_${toolSuffix(d)}`));
+    if (dataset === undefined) return fail(`Unknown tool "${name}".`);
+
+    if (name.startsWith('query_')) {
+      const sql = typeof args['sql'] === 'string' ? args['sql'] : '';
+      if (sql.length === 0) return fail('The `sql` argument is required.');
+
+      try {
+        const result = await this.query(dataset.id, sql);
+        trace.add({ kind: 'guard', label: 'Read-only check', detail: 'Passed.' });
+        trace.add({ kind: 'execute', label: 'Ran locally', rowCount: result.rows.length });
+
+        const built = trace.build('structured', true);
+        await this.record(built, { origin: 'tool', rowsReturned: result.rows.length, ok: true });
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ columns: result.columns, rows: result.rows }) }],
+          isError: false,
+          trace: built,
+        };
+      } catch (e) {
+        trace.add({ kind: 'guard', label: 'Refused', detail: e instanceof Error ? e.message : String(e) });
+        return fail(e instanceof Error ? e.message : String(e), dataset.id);
+      }
+    }
+
+    if (name.startsWith('search_')) {
+      const text = typeof args['text'] === 'string' ? args['text'] : '';
+      if (text.length === 0) return fail('The `text` argument is required.');
+      const k = typeof args['k'] === 'number' ? args['k'] : 5;
+
+      const hits = await this.semanticSearch(dataset.id, text, k);
+      trace.add({ kind: 'retrieve', label: 'Closest matches', rowCount: hits.length });
+
+      const built = trace.build('semantic', true);
+      await this.record(built, { origin: 'tool', rowsReturned: hits.length, ok: true });
+      return { content: [{ type: 'text', text: JSON.stringify(hits) }], isError: false, trace: built };
+    }
+
+    if (name.startsWith('propose_write_')) {
+      const instruction = typeof args['instruction'] === 'string' ? args['instruction'] : '';
+      if (instruction.length === 0) return fail('The `instruction` argument is required.');
+
+      try {
+        // Proposes. Does not apply. §6 is explicit that an agent-proposed mutation must
+        // surface for human approval, so there is no tool that confirms one.
+        const proposal = /^\s*(update|delete|insert)\b/i.test(instruction)
+          ? await this.proposeWrite(dataset.id, instruction)
+          : await this.proposeWriteFromQuestion(dataset.id, instruction);
+
+        const built = trace.build('structured', true);
+        await this.record(built, { origin: 'tool', rowsReturned: proposal.rowsAffected, ok: true });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                proposed: true,
+                applied: false,
+                note: 'This has NOT been executed. A human must confirm it in Datera.',
+                sql: proposal.sql,
+                rowsAffected: proposal.rowsAffected,
+                warnings: proposal.warnings,
+                changes: proposal.changes.slice(0, 5),
+              }),
+            },
+          ],
+          isError: false,
+          trace: built,
+        };
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e), dataset.id);
+      }
+    }
+
+    return fail(`Unknown tool "${name}".`);
+  }
+
+  /** Per-client connect configuration (§8). */
+  async connectConfig(
+    client: ClientId,
+    options: { readonly url?: string; readonly token?: string } = {},
+  ): Promise<ConnectConfig> {
+    const config: ConfigOptions = {
+      workspacePath: this.paths.root,
+      ...(options.url === undefined ? {} : { url: options.url }),
+      ...(options.token === undefined ? {} : { token: options.token }),
+    };
+    return buildConnectConfig(client, config);
+  }
+
+  // ---------------------------------------------------- the trace log (§8a)
+
+  async setTracePayloadCapture(enabled: boolean): Promise<void> {
+    await this.catalog.setSetting(TRACE_PAYLOADS_SETTING, enabled ? 'true' : 'false');
+    this.ports.logger.log('warn', 'Trace payload capture changed', { enabled });
+  }
+
+  async getTracePayloadCapture(): Promise<boolean> {
+    return (await this.catalog.getSetting(TRACE_PAYLOADS_SETTING)) === 'true';
+  }
+
+  async setTraceRetention(policy: Partial<RetentionPolicy>): Promise<RetentionPolicy> {
+    const next = { ...(await this.getTraceRetention()), ...policy };
+    await this.catalog.setSetting(TRACE_RETENTION_SETTING, JSON.stringify(next));
+    return next;
+  }
+
+  async getTraceRetention(): Promise<RetentionPolicy> {
+    const raw = await this.catalog.getSetting(TRACE_RETENTION_SETTING);
+    if (raw === null) return DEFAULT_RETENTION;
+    try {
+      return { ...DEFAULT_RETENTION, ...(JSON.parse(raw) as Partial<RetentionPolicy>) };
+    } catch {
+      return DEFAULT_RETENTION;
+    }
+  }
+
+  async queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]> {
+    return runTraceQuery(this.engine, query);
+  }
+
+  async pruneTraceLog(): Promise<number> {
+    return prune(this.engine, await this.getTraceRetention(), this.ports.clock.now());
+  }
+
+  /** Persist one trace. Called on every request path, so it is deliberately forgiving. */
+  private async record(
+    trace: Trace,
+    options: { origin: TraceOrigin; rowsReturned: number; ok: boolean; error?: string },
+  ): Promise<void> {
+    try {
+      const secrets: (string | null)[] = [];
+      for (const provider of ['anthropic', 'openai']) {
+        secrets.push(await this.ports.secrets.get(apiKeySecretName(provider)));
+      }
+
+      await recordTrace(this.engine, trace, {
+        origin: options.origin,
+        rowsReturned: options.rowsReturned,
+        ok: options.ok,
+        error: options.error ?? null,
+        capturePayloads: await this.getTracePayloadCapture(),
+        secrets,
+      });
+    } catch (e) {
+      // Failing to write the audit record must not fail the request it describes. It is
+      // logged loudly instead, because a silently missing audit trail is its own problem.
+      this.ports.logger.log('error', 'Could not persist trace record', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   // --------------------------------------------------------------- authoring

@@ -45,6 +45,15 @@ const IPC = {
   buildEmbeddings: 'datera:buildEmbeddings',
   semanticSearch: 'datera:semanticSearch',
   embeddingStatus: 'datera:embeddingStatus',
+  listTools: 'datera:listTools',
+  callTool: 'datera:callTool',
+  connectConfig: 'datera:connectConfig',
+  queryTraceLog: 'datera:queryTraceLog',
+  getTraceRetention: 'datera:getTraceRetention',
+  setTraceRetention: 'datera:setTraceRetention',
+  getTracePayloadCapture: 'datera:getTracePayloadCapture',
+  setTracePayloadCapture: 'datera:setTracePayloadCapture',
+  pruneTraceLog: 'datera:pruneTraceLog',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -79,4 +88,13 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   buildEmbeddings: (datasetId: string) => call(IPC.buildEmbeddings, datasetId),
   semanticSearch: (datasetId: string, text: string, k?: number) => call(IPC.semanticSearch, datasetId, text, k),
   embeddingStatus: (datasetId: string) => call(IPC.embeddingStatus, datasetId),
+  listTools: () => call(IPC.listTools),
+  callTool: (name: string, args: unknown) => call(IPC.callTool, name, args),
+  connectConfig: (client: string, opts?: unknown) => call(IPC.connectConfig, client, opts),
+  queryTraceLog: (query: unknown) => call(IPC.queryTraceLog, query),
+  getTraceRetention: () => call(IPC.getTraceRetention),
+  setTraceRetention: (policy: unknown) => call(IPC.setTraceRetention, policy),
+  getTracePayloadCapture: () => call(IPC.getTracePayloadCapture),
+  setTracePayloadCapture: (enabled: boolean) => call(IPC.setTracePayloadCapture, enabled),
+  pruneTraceLog: () => call(IPC.pruneTraceLog),
 });

@@ -3,6 +3,13 @@ import type {
   AskResult,
   BuildResult,
   SearchHit,
+  ToolDefinition,
+  ToolResult,
+  ConnectConfig,
+  ClientId,
+  TraceRecord,
+  TraceQuery,
+  RetentionPolicy,
   AuthoredRelationship,
   ColumnDefinition,
   EntityDefinition,
@@ -66,6 +73,17 @@ export interface DateraApi {
   buildEmbeddings(datasetId: string): Promise<BuildResult>;
   semanticSearch(datasetId: string, text: string, k?: number): Promise<readonly SearchHit[]>;
   embeddingStatus(datasetId: string): Promise<{ chunks: number; columns: readonly string[] }>;
+
+  // ---- Phase 7 -----------------------------------------------------------
+  listTools(): Promise<readonly ToolDefinition[]>;
+  callTool(name: string, args: Record<string, unknown>): Promise<ToolResult>;
+  connectConfig(client: ClientId, options?: { url?: string; token?: string }): Promise<ConnectConfig>;
+  queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]>;
+  getTraceRetention(): Promise<RetentionPolicy>;
+  setTraceRetention(policy: Partial<RetentionPolicy>): Promise<RetentionPolicy>;
+  getTracePayloadCapture(): Promise<boolean>;
+  setTracePayloadCapture(enabled: boolean): Promise<void>;
+  pruneTraceLog(): Promise<number>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -98,6 +116,15 @@ export const IPC = {
   buildEmbeddings: 'datera:buildEmbeddings',
   semanticSearch: 'datera:semanticSearch',
   embeddingStatus: 'datera:embeddingStatus',
+  listTools: 'datera:listTools',
+  callTool: 'datera:callTool',
+  connectConfig: 'datera:connectConfig',
+  queryTraceLog: 'datera:queryTraceLog',
+  getTraceRetention: 'datera:getTraceRetention',
+  setTraceRetention: 'datera:setTraceRetention',
+  getTracePayloadCapture: 'datera:getTracePayloadCapture',
+  setTracePayloadCapture: 'datera:setTracePayloadCapture',
+  pruneTraceLog: 'datera:pruneTraceLog',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

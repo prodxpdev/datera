@@ -8,6 +8,9 @@
       "path": "./packages/node-runtime"
     },
     {
+      "path": "./packages/cli"
+    },
+    {
       "path": "./packages/testkit"
     },
     {

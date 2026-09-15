@@ -148,6 +148,15 @@ function registerHandlers(): void {
     core().semanticSearch(datasetId, text, k ?? 5),
   );
   handle(IPC.embeddingStatus, async (datasetId: string) => core().embeddingStatus(datasetId));
+  handle(IPC.listTools, async () => core().listTools());
+  handle(IPC.callTool, async (name: string, args: Record<string, unknown>) => core().callTool(name, args));
+  handle(IPC.connectConfig, async (client: never, opts?: never) => core().connectConfig(client, opts ?? {}));
+  handle(IPC.queryTraceLog, async (query: never) => core().queryTraceLog(query ?? {}));
+  handle(IPC.getTraceRetention, async () => core().getTraceRetention());
+  handle(IPC.setTraceRetention, async (policy: never) => core().setTraceRetention(policy));
+  handle(IPC.getTracePayloadCapture, async () => core().getTracePayloadCapture());
+  handle(IPC.setTracePayloadCapture, async (enabled: boolean) => core().setTracePayloadCapture(enabled));
+  handle(IPC.pruneTraceLog, async () => core().pruneTraceLog());
 
   handle(IPC.pickFiles, async () => {
     if (window === null) return [];

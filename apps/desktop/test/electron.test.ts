@@ -98,15 +98,20 @@ describe('P1-18/P1-19 Electron shell', () => {
     expect(probe.hasModule).toBe(false);
     // Asserted exactly, not as a subset: the bridge is the renderer's entire reach into
     // the main process, so an accidental addition should fail here and be looked at.
-    expect(probe.bridgeKeys).toEqual([
-      'addSource', 'ask', 'buildEmbeddings', 'clearApiKey', 'confirmColumn', 'confirmEntity',
-      'confirmRelationship', 'createDataset', 'detectRelationships', 'draftDictionary',
-      'embeddingStatus', 'engineInfo', 'explainTouched', 'getDictionary', 'getSchema',
-      'hasApiKey',
-      'listDatasets', 'listModels', 'listRelationships', 'listSources', 'pickFiles',
-      'preview', 'query', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',
-      'setEmbeddingModel',
-    ]);
+    // Asserted exactly, not as a subset: the bridge is the renderer's entire reach into
+    // the main process, so an accidental addition should fail here and be looked at.
+    expect([...probe.bridgeKeys].sort()).toEqual(
+      [
+        'addSource', 'ask', 'buildEmbeddings', 'callTool', 'clearApiKey', 'confirmColumn',
+        'confirmEntity', 'confirmRelationship', 'connectConfig', 'createDataset',
+        'detectRelationships', 'draftDictionary', 'embeddingStatus', 'engineInfo',
+        'explainTouched', 'getDictionary', 'getSchema', 'getTracePayloadCapture',
+        'getTraceRetention', 'hasApiKey', 'listDatasets', 'listModels', 'listRelationships',
+        'listSources', 'listTools', 'pickFiles', 'preview', 'pruneTraceLog', 'query',
+        'queryTraceLog', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',
+        'setEmbeddingModel', 'setTracePayloadCapture', 'setTraceRetention',
+      ].sort(),
+    );
   });
 
   it('shows the empty state before anything is connected', async () => {

@@ -76,6 +76,19 @@ importers:
         specifier: ^5.4.11
         version: 5.4.21(@types/node@22.20.2)
 
+  packages/cli:
+    dependencies:
+      '@datera/core':
+        specifier: workspace:*
+        version: link:../core
+      '@datera/node-runtime':
+        specifier: workspace:*
+        version: link:../node-runtime
+    devDependencies:
+      '@datera/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+
   packages/core:
     devDependencies:
       '@datera/node-runtime':

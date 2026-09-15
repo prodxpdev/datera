@@ -11,6 +11,7 @@ import { Ask } from './Ask.js';
 import { SqlView } from './SqlView.js';
 import { Models } from './Models.js';
 import { Dictionary } from './Dictionary.js';
+import { Serve } from './Serve.js';
 
 /**
  * P1-17 — the Workspace view.
@@ -50,7 +51,7 @@ const NAV: readonly NavItem[] = [
   { id: 'sql', icon: '›_', label: 'SQL', enabled: true, title: 'SQL', subtitle: 'write DuckDB SQL, read-only' },
   { id: 'models', icon: '◈', label: 'Models', enabled: true, title: 'Models', subtitle: 'local by default, your key if you want one' },
   { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: true, title: 'Dictionary', subtitle: 'what your columns mean — the layer NL and search use' },
-  { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: false, title: 'Serve', subtitle: 'Phase 7' },
+  { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: true, title: 'Serve', subtitle: 'tools, connect configs, and the traffic log' },
   { id: 'environments', icon: '☁', label: 'Environments', enabled: false, title: 'Environments', subtitle: 'Phase 8' },
   { id: 'learn', icon: '◎', label: 'Learn', enabled: false, title: 'Learn', subtitle: 'Phase 9' },
 ];
@@ -216,6 +217,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           )}
           {nav === 'models' && <Models api={api} datasetId={dataset?.id ?? 'ungrouped'} />}
           {nav === 'dictionary' && <Dictionary api={api} sources={loaded.sources} />}
+          {nav === 'serve' && <Serve api={api} />}
 
           {nav === 'workspace' && (loaded.sources.length === 0 ? (
             <div className="empty">

@@ -136,6 +136,14 @@ export type { NormalizationProposal, EntityProposal, EnumProposal } from './cow/
 
 // ------------------------------------------------------------- writes (§6)
 export type { WriteProposal, AppliedWrite, RowChange, WriteKind } from './writes/writes.js';
+
+// -------------------------------------------------------- serve (§8, §8a)
+export type { ToolDefinition, ToolSchema, ToolContext } from './serve/tools.js';
+export { toolsFor, toolSuffix } from './serve/tools.js';
+export type { ConnectConfig, ClientId } from './serve/configs.js';
+export type { TraceRecord, TraceQuery, RetentionPolicy, TraceOrigin } from './serve/trace-log.js';
+export { DEFAULT_RETENTION } from './serve/trace-log.js';
+export type { ToolResult } from './datera.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';

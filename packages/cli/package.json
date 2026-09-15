@@ -1,0 +1,31 @@
+{
+  "name": "@datera/cli",
+  "version": "0.1.0",
+  "description": "The `datera` binary \u2014 a headless host over @datera/core, serving MCP and a local REST API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "datera": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@datera/core": "workspace:*",
+    "@datera/node-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@datera/testkit": "workspace:*"
+  }
+}
