@@ -144,6 +144,12 @@ export type { ConnectConfig, ClientId } from './serve/configs.js';
 export type { TraceRecord, TraceQuery, RetentionPolicy, TraceOrigin } from './serve/trace-log.js';
 export { DEFAULT_RETENTION } from './serve/trace-log.js';
 export type { ToolResult } from './datera.js';
+
+// ------------------------------------------------- environments (§10, §12.10)
+export type { Environment, EnvironmentStatus, EnvironmentKind } from './environments/types.js';
+export { LOCAL_ENVIRONMENT_ID, environmentTokenKey } from './environments/types.js';
+export { RemoteDatera } from './environments/remote.js';
+export type { RemoteQueryResult } from './environments/remote.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';

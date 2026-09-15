@@ -62,6 +62,11 @@ import {
   type EnumProposal, type NormalizationProposal,
 } from './cow/normalize.js';
 import { toolsFor, toolSuffix, type ToolContext, type ToolDefinition } from './serve/tools.js';
+import {
+  LOCAL_ENVIRONMENT_ID, environmentTokenKey,
+  type Environment, type EnvironmentStatus,
+} from './environments/types.js';
+import { RemoteDatera } from './environments/remote.js';
 import { connectConfig as buildConnectConfig, type ClientId, type ConnectConfig, type ConfigOptions } from './serve/configs.js';
 import {
   DEFAULT_RETENTION, migrateTraceLog, pruneTraceLog as prune, queryTraceLog as runTraceQuery,
@@ -147,6 +152,7 @@ const CHAT_MODEL_SETTING = 'model.chat';
 const EMBEDDING_MODEL_SETTING = 'model.embedding';
 const TRACE_PAYLOADS_SETTING = 'trace.capturePayloads';
 const TRACE_RETENTION_SETTING = 'trace.retention';
+const ENVIRONMENTS_SETTING = 'environments';
 
 /** What a served tool call returns, in the shape MCP expects. */
 export interface ToolResult {
@@ -1845,6 +1851,268 @@ export class Datera {
         error: e instanceof Error ? e.message : String(e),
       });
     }
+  }
+
+  // ------------------------------------------------ environments (§10, §12.10)
+
+  /**
+   * Environments the client can drive.
+   *
+   * Local always exists and is always first: Datera works standalone, and a list that
+   * could be empty would imply otherwise.
+   */
+  async listEnvironments(): Promise<readonly Environment[]> {
+    const local: Environment = {
+      id: LOCAL_ENVIRONMENT_ID,
+      name: 'Local',
+      kind: 'local',
+      createdAt: this.manifest.createdAt,
+    };
+
+    const raw = await this.catalog.getSetting(ENVIRONMENTS_SETTING);
+    if (raw === null) return [local];
+
+    try {
+      const stored = JSON.parse(raw) as Environment[];
+      return [local, ...stored.filter((e) => e.id !== LOCAL_ENVIRONMENT_ID)];
+    } catch {
+      return [local];
+    }
+  }
+
+  /** Add a deployed Datera Server. The token goes to the keychain, never to the catalog. */
+  async addEnvironment(input: {
+    readonly id: string;
+    readonly name: string;
+    readonly url: string;
+    readonly token?: string;
+  }): Promise<Environment> {
+    if (input.id === LOCAL_ENVIRONMENT_ID) {
+      throw new DateraError('INVALID_ARGUMENT', '"local" is reserved for this machine.', {});
+    }
+
+    let tokenKey: string | undefined;
+    if (input.token !== undefined && input.token.length > 0) {
+      if (!(await this.ports.secrets.isAvailable())) {
+        throw new DateraError(
+          'SECRET_STORE_UNAVAILABLE',
+          'No protected credential store is available, and Datera will not write an environment token to disk in plaintext.',
+          { environment: input.id },
+        );
+      }
+      tokenKey = environmentTokenKey(input.id);
+      await this.ports.secrets.set(tokenKey, input.token);
+    }
+
+    const environment: Environment = {
+      id: input.id,
+      name: input.name,
+      kind: 'remote',
+      url: input.url.replace(/\/+$/, ''),
+      tokenKey,
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+
+    const existing = (await this.listEnvironments()).filter(
+      (e) => e.kind === 'remote' && e.id !== input.id,
+    );
+    await this.catalog.setSetting(ENVIRONMENTS_SETTING, JSON.stringify([...existing, environment]));
+
+    this.ports.logger.log('info', 'Environment added', { id: input.id, url: environment.url });
+    return environment;
+  }
+
+  async removeEnvironment(id: string): Promise<void> {
+    if (id === LOCAL_ENVIRONMENT_ID) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        'The local environment cannot be removed — Datera always has somewhere to work.',
+        {},
+      );
+    }
+    const remaining = (await this.listEnvironments()).filter((e) => e.kind === 'remote' && e.id !== id);
+    await this.catalog.setSetting(ENVIRONMENTS_SETTING, JSON.stringify(remaining));
+    await this.ports.secrets.delete(environmentTokenKey(id));
+  }
+
+  /** A client for a remote environment, offering the same operations as the local façade. */
+  async connectTo(environmentId: string): Promise<RemoteDatera> {
+    const environment = (await this.listEnvironments()).find((e) => e.id === environmentId);
+    if (environment === undefined || environment.kind !== 'remote' || environment.url === undefined) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        `"${environmentId}" is not a remote environment.`,
+        { environmentId },
+      );
+    }
+
+    const token =
+      environment.tokenKey === undefined ? null : await this.ports.secrets.get(environment.tokenKey);
+
+    return new RemoteDatera(this.http, environment.url, token, environment.name);
+  }
+
+  /** Reachability for the environment list. Never throws — the UI wants a badge. */
+  async environmentStatuses(): Promise<readonly EnvironmentStatus[]> {
+    const environments = await this.listEnvironments();
+    const statuses: EnvironmentStatus[] = [];
+
+    for (const environment of environments) {
+      if (environment.kind === 'local') {
+        statuses.push({
+          id: environment.id, name: environment.name, kind: 'local',
+          url: null, reachable: true,
+        });
+        continue;
+      }
+
+      const client = await this.connectTo(environment.id);
+      const health = await client.reachable();
+      statuses.push({
+        id: environment.id,
+        name: environment.name,
+        kind: 'remote',
+        url: environment.url ?? null,
+        reachable: health.ok,
+        ...(health.reason === undefined ? {} : { reason: health.reason }),
+      });
+    }
+
+    return statuses;
+  }
+
+  /**
+   * Push a dataset to an environment (spec §10).
+   *
+   * Reuses the §12.11 export, deliberately: a push that serialised data its own way could
+   * be lossy in ways an export is not, and then "what you pushed" and "what you can take
+   * away" would be two different things.
+   */
+  async pushDataset(
+    datasetId: string,
+    environmentId: string,
+  ): Promise<{ ok: true; environment: string }> {
+    if (environmentId === LOCAL_ENVIRONMENT_ID) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        'That dataset is already here. Push targets a deployed Datera Server.',
+        { datasetId },
+      );
+    }
+
+    const dataset = await this.getDataset(datasetId);
+    const client = await this.connectTo(environmentId);
+
+    const dictionaries: SourceDictionary[] = [];
+    for (const source of (await this.listSources()).filter((s) => s.datasetId === datasetId)) {
+      dictionaries.push(await this.getDictionary(source.id));
+    }
+
+    const manifest = await this.buildPushManifest(dataset, dictionaries, datasetId);
+    await client.push(manifest.manifest, manifest.tables);
+
+    this.ports.logger.log('info', 'Dataset pushed', { datasetId, environmentId });
+    return { ok: true, environment: environmentId };
+  }
+
+  /**
+   * Accept a pushed dataset. Called by a host that has chosen to allow pushes.
+   *
+   * Note what this does *not* do: it performs no authorisation. Deciding whether a caller
+   * may push is the host's job — and on a real Datera Server that decision involves
+   * per-token scoping, which is private-repo code by §2.
+   */
+  async receivePush(
+    manifestJson: string,
+    tables: readonly { name: string; csv: string }[],
+  ): Promise<{ datasetId: string; tables: readonly string[] }> {
+    const manifest = JSON.parse(manifestJson) as { dataset: { name: string; description: string } };
+
+    const schemaName = await this.uniqueSchemaName(manifest.dataset.name);
+    const dataset: Dataset = {
+      id: this.makeId(),
+      name: manifest.dataset.name,
+      description: manifest.dataset.description,
+      schemaName,
+      isDefault: false,
+      kind: 'imported',
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+
+    await this.engine.executeInternal(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schemaName)}`);
+    await this.catalog.insertDataset(dataset);
+
+    // A push carries CSV *content*, and DuckDB's readers take paths. Staging it in the
+    // workspace keeps one CSV parser in play — the same sniffer, the same type inference,
+    // the same warnings a connected file gets — rather than a second, divergent path for
+    // data that arrived over the wire.
+    const inbox = joinPath(this.paths.root, '.push-inbox');
+    await this.ports.fs.mkdirp(inbox);
+
+    const created: string[] = [];
+    for (const table of tables) {
+      const staged = joinPath(inbox, `${table.name}.csv`);
+      await this.ports.fs.writeTextFile(staged, table.csv);
+
+      await this.engine.executeInternal(
+        `CREATE TABLE ${qualified(schemaName, table.name)} AS
+         SELECT * FROM read_csv(${quoteLiteral(staged)}, auto_detect=true)`,
+      );
+      created.push(table.name);
+
+      const source: Source = {
+        id: this.makeId(),
+        datasetId: dataset.id,
+        name: table.name,
+        kind: 'csv',
+        origin: staged,
+        detection: { method: 'received from a Datera client push', settings: {} },
+        addedAt: this.ports.clock.now().toISOString(),
+      };
+      await this.catalog.insertSource(source);
+
+      const parsed = JSON.parse(manifestJson) as { dictionaries?: SourceDictionary[] };
+      const dictionary = (parsed.dictionaries ?? []).find((d) => d.sourceName === table.name);
+      for (const column of dictionary?.columns ?? []) {
+        if (column.state === 'undefined') continue;
+        await this.catalog.upsertColumnDefinition(source.id, column);
+      }
+      if (dictionary !== undefined && dictionary.entity.state !== 'undefined') {
+        await this.catalog.upsertEntityDefinition(source.id, dictionary.entity);
+      }
+    }
+
+    return { datasetId: dataset.id, tables: created };
+  }
+
+  /** Export into a temporary directory and read back the pieces a push carries. */
+  private async buildPushManifest(
+    dataset: Dataset,
+    dictionaries: readonly SourceDictionary[],
+    datasetId: string,
+  ): Promise<{ manifest: string; tables: { name: string; csv: string }[] }> {
+    const directory = joinPath(this.paths.root, '.push-staging');
+    const exported = await runExportDataset({
+      engine: this.engine,
+      fs: this.ports.fs,
+      dataset,
+      directory,
+      format: 'csv',
+      dictionaries,
+      relationships: await this.catalog.listRelationships(datasetId),
+      now: () => this.ports.clock.now(),
+      appVersion: this.manifest.createdBy,
+    });
+
+    const tables: { name: string; csv: string }[] = [];
+    for (const table of exported.manifest.tables) {
+      tables.push({
+        name: table.name,
+        csv: await this.ports.fs.readTextFile(joinPath(directory, table.file)),
+      });
+    }
+
+    return { manifest: JSON.stringify(exported.manifest), tables };
   }
 
   // --------------------------------------------------------------- authoring

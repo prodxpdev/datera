@@ -12,6 +12,7 @@ export interface CliOptions {
   readonly httpPort: number | null;
   readonly host: string | null;
   readonly token: string | null;
+  readonly allowPush: boolean;
   readonly help: boolean;
 }
 
@@ -21,7 +22,8 @@ const INFO: ServerInfo = { name: 'datera', version: VERSION };
 export function parseArgs(argv: readonly string[]): CliOptions {
   const options = {
     mcp: false, workspace: null as string | null, httpPort: null as number | null,
-    host: null as string | null, token: null as string | null, help: false,
+    host: null as string | null, token: null as string | null,
+    allowPush: false, help: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -34,6 +36,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
     else if (arg === '--http' && next !== undefined) { options.httpPort = Number(next); i += 1; }
     else if (arg === '--host' && next !== undefined) { options.host = next; i += 1; }
     else if (arg === '--token' && next !== undefined) { options.token = next; i += 1; }
+    else if (arg === '--allow-push') options.allowPush = true;
   }
 
   return options;
@@ -46,6 +49,11 @@ export const USAGE = `datera — serve a Datera workspace over MCP and a local A
   datera --http <port> --host 0.0.0.0 --token <token>
                                            Reachable beyond this machine. A token is
                                            required for any non-loopback host.
+
+  --allow-push                             Accept datasets pushed from a Datera client.
+                                           Off by default: receiving a dataset writes to
+                                           the workspace, which is a different grant from
+                                           serving reads.
 
 Everything is read-only unless a write grant exists on a dataset, and a granted
 write is only ever *proposed* over the wire — a human confirms it in Datera.
@@ -101,6 +109,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         port: options.httpPort,
         ...(options.host === null ? {} : { host: options.host }),
         ...(options.token === null ? {} : { token: options.token }),
+        allowPush: options.allowPush,
         log,
       });
 

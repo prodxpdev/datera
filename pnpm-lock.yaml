@@ -91,6 +91,9 @@ importers:
 
   packages/core:
     devDependencies:
+      '@datera/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@datera/node-runtime':
         specifier: workspace:*
         version: link:../node-runtime

@@ -10,6 +10,8 @@ import type {
   TraceRecord,
   TraceQuery,
   RetentionPolicy,
+  Environment,
+  EnvironmentStatus,
   AuthoredRelationship,
   ColumnDefinition,
   EntityDefinition,
@@ -84,6 +86,14 @@ export interface DateraApi {
   getTracePayloadCapture(): Promise<boolean>;
   setTracePayloadCapture(enabled: boolean): Promise<void>;
   pruneTraceLog(): Promise<number>;
+
+  // ---- Phase 8 (client half only) ---------------------------------------
+  listEnvironments(): Promise<readonly Environment[]>;
+  environmentStatuses(): Promise<readonly EnvironmentStatus[]>;
+  addEnvironment(input: { id: string; name: string; url: string; token?: string }): Promise<Environment>;
+  removeEnvironment(id: string): Promise<void>;
+  pushDataset(datasetId: string, environmentId: string): Promise<{ ok: true; environment: string }>;
+  remoteQuery(environmentId: string, datasetId: string, sql: string): Promise<unknown>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -125,6 +135,12 @@ export const IPC = {
   getTracePayloadCapture: 'datera:getTracePayloadCapture',
   setTracePayloadCapture: 'datera:setTracePayloadCapture',
   pruneTraceLog: 'datera:pruneTraceLog',
+  listEnvironments: 'datera:listEnvironments',
+  environmentStatuses: 'datera:environmentStatuses',
+  addEnvironment: 'datera:addEnvironment',
+  removeEnvironment: 'datera:removeEnvironment',
+  pushDataset: 'datera:pushDataset',
+  remoteQuery: 'datera:remoteQuery',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

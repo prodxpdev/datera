@@ -36,6 +36,8 @@ const METHODS = [
   'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',
   'listTools', 'callTool', 'connectConfig', 'queryTraceLog', 'getTraceRetention',
   'setTraceRetention', 'getTracePayloadCapture', 'setTracePayloadCapture', 'pruneTraceLog',
+  'listEnvironments', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
+  'pushDataset', 'remoteQuery',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {

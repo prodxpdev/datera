@@ -23,6 +23,14 @@ export interface HttpServeOptions {
   readonly port: number;
   readonly host?: string;
   readonly token?: string | undefined;
+  /**
+   * Accept pushed datasets (spec §10).
+   *
+   * Off by default. Receiving a dataset means writing to the workspace, which is a
+   * materially different grant from serving reads — so it is a separate, explicit opt-in
+   * rather than something that comes along with starting a server.
+   */
+  readonly allowPush?: boolean | undefined;
   readonly log: (message: string) => void;
 }
 
@@ -83,6 +91,37 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
 
     if (url.startsWith('/api/tools')) {
       respond(res, 200, { tools: await options.datera.listTools() });
+      return;
+    }
+
+    if (url.startsWith('/api/datasets')) {
+      respond(res, 200, { datasets: await options.datera.listDatasets() });
+      return;
+    }
+
+    if (url.startsWith('/api/sources')) {
+      respond(res, 200, { sources: await options.datera.listSources() });
+      return;
+    }
+
+    if (url.startsWith('/api/push') && req.method === 'POST') {
+      if (options.allowPush !== true) {
+        respond(res, 403, {
+          error:
+            'This server does not accept pushed datasets. Start it with --allow-push to enable that.',
+        });
+        return;
+      }
+
+      const body = await readBody(req);
+      const parsed = JSON.parse(body) as { manifest?: string; tables?: { name: string; csv: string }[] };
+      if (parsed.manifest === undefined) {
+        respond(res, 400, { error: 'A manifest is required.' });
+        return;
+      }
+
+      const result = await options.datera.receivePush(parsed.manifest, parsed.tables ?? []);
+      respond(res, 200, { ok: true, datasetId: result.datasetId, tables: result.tables });
       return;
     }
 

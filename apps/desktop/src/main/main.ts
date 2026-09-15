@@ -157,6 +157,15 @@ function registerHandlers(): void {
   handle(IPC.getTracePayloadCapture, async () => core().getTracePayloadCapture());
   handle(IPC.setTracePayloadCapture, async (enabled: boolean) => core().setTracePayloadCapture(enabled));
   handle(IPC.pruneTraceLog, async () => core().pruneTraceLog());
+  handle(IPC.listEnvironments, async () => core().listEnvironments());
+  handle(IPC.environmentStatuses, async () => core().environmentStatuses());
+  handle(IPC.addEnvironment, async (input: never) => core().addEnvironment(input));
+  handle(IPC.removeEnvironment, async (id: string) => core().removeEnvironment(id));
+  handle(IPC.pushDataset, async (datasetId: string, envId: string) => core().pushDataset(datasetId, envId));
+  handle(IPC.remoteQuery, async (envId: string, datasetId: string, sql: string) => {
+    const client = await core().connectTo(envId);
+    return client.query(datasetId, sql);
+  });
 
   handle(IPC.pickFiles, async () => {
     if (window === null) return [];

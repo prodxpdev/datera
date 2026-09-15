@@ -54,6 +54,12 @@ const IPC = {
   getTracePayloadCapture: 'datera:getTracePayloadCapture',
   setTracePayloadCapture: 'datera:setTracePayloadCapture',
   pruneTraceLog: 'datera:pruneTraceLog',
+  listEnvironments: 'datera:listEnvironments',
+  environmentStatuses: 'datera:environmentStatuses',
+  addEnvironment: 'datera:addEnvironment',
+  removeEnvironment: 'datera:removeEnvironment',
+  pushDataset: 'datera:pushDataset',
+  remoteQuery: 'datera:remoteQuery',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -97,4 +103,10 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   getTracePayloadCapture: () => call(IPC.getTracePayloadCapture),
   setTracePayloadCapture: (enabled: boolean) => call(IPC.setTracePayloadCapture, enabled),
   pruneTraceLog: () => call(IPC.pruneTraceLog),
+  listEnvironments: () => call(IPC.listEnvironments),
+  environmentStatuses: () => call(IPC.environmentStatuses),
+  addEnvironment: (input: unknown) => call(IPC.addEnvironment, input),
+  removeEnvironment: (id: string) => call(IPC.removeEnvironment, id),
+  pushDataset: (datasetId: string, envId: string) => call(IPC.pushDataset, datasetId, envId),
+  remoteQuery: (envId: string, datasetId: string, sql: string) => call(IPC.remoteQuery, envId, datasetId, sql),
 });

@@ -110,6 +110,8 @@ describe('P1-18/P1-19 Electron shell', () => {
         'listSources', 'listTools', 'pickFiles', 'preview', 'pruneTraceLog', 'query',
         'queryTraceLog', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',
         'setEmbeddingModel', 'setTracePayloadCapture', 'setTraceRetention',
+        'addEnvironment', 'environmentStatuses', 'listEnvironments', 'pushDataset',
+        'remoteQuery', 'removeEnvironment',
       ].sort(),
     );
   });
