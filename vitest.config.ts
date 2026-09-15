@@ -15,6 +15,6 @@ export default defineConfig({
     // enough of those starting at once starves each other — producing timeouts that
     // look like product bugs and are not. Four is comfortably parallel on a laptop and
     // still leaves headroom for whatever else is running.
-    poolOptions: { forks: { singleFork: false, maxForks: 4 } },
+    poolOptions: { forks: { singleFork: false, minForks: 1, maxForks: 4 } },
   },
 });

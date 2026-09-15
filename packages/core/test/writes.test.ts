@@ -297,3 +297,57 @@ describe('§6 the footgun: an NL instruction that becomes a DELETE', () => {
     expect(proposal.trace?.stages.some((s) => s.kind === 'model')).toBe(true);
   });
 });
+
+describe('§6 a model that invents a column', () => {
+  let ws: TestWorkspace;
+  let server: StubModelServer;
+  let fixtures: FixturePaths;
+  let derivedId: string;
+
+  beforeEach(async () => {
+    fixtures = fixturePaths(process.env['DATERA_FIXTURES'] as string);
+    server = await startStubModelServer();
+    ws = await openTestWorkspace({ ports: testPorts({ http: true }) });
+    await ws.datera.addSource({ type: 'file', path: fixtures.ordersCsv, name: 'orders' });
+    derivedId = (await ws.datera.deriveDataset(DEFAULT_DATASET_ID, { name: 'Working copy' })).datasetId;
+    await ws.datera.grantWrite(derivedId);
+    await ws.datera.setChatModel({
+      tier: 'detected', provider: 'ollama', id: 'llama3.1:8b', role: 'chat',
+      locality: 'local', endpoint: server.url, label: 'llama3.1:8b',
+    });
+  });
+
+  afterEach(async () => {
+    await ws.dispose();
+    await server.close();
+  });
+
+  it('explains the invented column instead of dumping a binder error', async () => {
+    // Found by running against a real frontier model: asked to "mark every refunded order
+    // as VOID", it wrote `WHERE status = 'refunded'` — there is no status column. Ask
+    // handles this exact failure gracefully; the write path threw a raw parser dump, so
+    // the same mistake produced two completely different experiences.
+    server.setReply(`UPDATE orders SET product = 'VOID' WHERE status = 'refunded'`);
+
+    const error = await ws.datera
+      .proposeWriteFromQuestion(derivedId, 'mark every refunded order as VOID')
+      .then(() => null)
+      .catch((e: unknown) => e as { code?: string; message?: string; details?: Record<string, unknown> });
+
+    expect(error?.code).toBe('CANNOT_ANSWER');
+    expect(error?.message).toMatch(/status/);
+    expect(error?.message).toMatch(/does not exist|no column/i);
+    // The statement it tried is shown, because seeing it is how you learn what went wrong.
+    expect(String(error?.details?.['sql'])).toContain('UPDATE orders');
+    // And not a wall of parser output.
+    expect(error?.message).not.toMatch(/LINE 1:|Candidate bindings/);
+  });
+
+  it('still refuses cleanly when the model writes a SELECT', async () => {
+    server.setReply('SELECT * FROM orders');
+
+    await expect(
+      ws.datera.proposeWriteFromQuestion(derivedId, 'show me everything'),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+});

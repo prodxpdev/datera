@@ -68,6 +68,17 @@ import {
 } from './environments/types.js';
 import { RemoteDatera } from './environments/remote.js';
 import { DEFAULT_LIFECYCLE, validateLifecycle, type Lifecycle } from './teaching/lifecycle.js';
+
+/** Pull the offending identifier out of DuckDB's binder error, for a readable message. */
+function describeMissing(bindError: string): string {
+  const column = /Referenced column "([^"]+)" not found/.exec(bindError)?.[1];
+  if (column !== undefined) return `a column called "${column}"`;
+
+  const table = /Table with name ([^\s]+) does not exist/.exec(bindError)?.[1];
+  if (table !== undefined) return `a table called "${table}"`;
+
+  return 'something';
+}
 import { deriveLifecycle } from './teaching/derive.js';
 import { connectConfig as buildConnectConfig, type ClientId, type ConnectConfig, type ConfigOptions } from './serve/configs.js';
 import {
@@ -1622,7 +1633,24 @@ export class Datera {
 
     trace.add({ kind: 'sql', label: 'Proposed SQL', sql: extracted.sql, detail: 'Shown before anything runs.' });
 
-    const proposal = await this.proposeWrite(datasetId, extracted.sql);
+    let proposal: WriteProposal;
+    try {
+      proposal = await this.proposeWrite(datasetId, extracted.sql);
+    } catch (e) {
+      // A model that invents a column is the characteristic failure, and it arrives here
+      // as a binder error. Ask already reports this as "could not answer"; the write path
+      // used to surface the raw parser output instead, so the same mistake produced two
+      // completely different experiences. Found by running against a real model.
+      if (DateraError.is(e, 'INVALID_ARGUMENT') && e.details['bindError'] !== undefined) {
+        throw new DateraError(
+          'CANNOT_ANSWER',
+          `Datera will not propose that change: the model's SQL refers to ${describeMissing(String(e.details['bindError']))}, ` +
+            `which does not exist in this dataset. Rephrase, or check the Dictionary so the model knows what your columns mean.`,
+          { datasetId, instruction, sql: extracted.sql, bindError: e.details['bindError'] },
+        );
+      }
+      throw e;
+    }
     const withTrace: WriteProposal = { ...proposal, trace: trace.build('structured', true) };
     this.pendingWrites.set(proposal.id, withTrace);
     return withTrace;
