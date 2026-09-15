@@ -167,6 +167,33 @@ function registerHandlers(): void {
   handle(IPC.renameDataset, async (id: string, name: string) => core().renameDataset(id, name));
   handle(IPC.deleteDataset, async (id: string) => core().deleteDataset(id));
   handle(IPC.apiEndpoints, async () => API_ENDPOINTS);
+  handle(IPC.deriveDataset, async (id: string, input: never) => core().deriveDataset(id, input));
+  handle(IPC.proposeNormalization, async (sourceId: string) => core().proposeNormalization(sourceId));
+  handle(IPC.applyNormalization, async (id: string, p: never, input: never) => core().applyNormalization(id, p, input));
+  handle(IPC.proposeEnums, async (sourceId: string) => core().proposeEnums(sourceId));
+  handle(IPC.saveVersion, async (id: string, label: string) => core().saveVersion(id, label));
+  handle(IPC.listVersions, async (id: string) => core().listVersions(id));
+  handle(IPC.diffVersions, async (a: string, b: string) => core().diffVersions(a, b));
+  handle(IPC.exportDataset, async (id: string, dir: string, opts?: never) => core().exportDataset(id, dir, opts ?? {}));
+  handle(IPC.importDataset, async (dir: string) => core().importDataset(dir));
+  handle(IPC.canWrite, async (id: string) => core().canWrite(id));
+  handle(IPC.grantWrite, async (id: string) => core().grantWrite(id));
+  handle(IPC.revokeWrite, async (id: string) => core().revokeWrite(id));
+  handle(IPC.proposeWrite, async (id: string, sql: string) => core().proposeWrite(id, sql));
+  handle(IPC.proposeWriteFromQuestion, async (id: string, q: string) => core().proposeWriteFromQuestion(id, q));
+  handle(IPC.confirmWrite, async (proposalId: string) => core().confirmWrite(proposalId));
+  handle(IPC.undoWrite, async (writeId: string) => core().undoWrite(writeId));
+  handle(IPC.listWrites, async (id: string) => core().listWrites(id));
+  handle(IPC.listTables, async (id: string) => core().listTables(id));
+
+  handle(IPC.pickDirectory, async () => {
+    if (window === null) return null;
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Choose a folder',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
   handle(IPC.getLifecycle, async () => core().getLifecycle());
   handle(IPC.setLifecycle, async (lifecycle: never) => core().setLifecycle(lifecycle));
   handle(IPC.resetLifecycle, async () => core().resetLifecycle());

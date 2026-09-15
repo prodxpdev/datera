@@ -40,6 +40,11 @@ const METHODS = [
   'pushDataset', 'remoteQuery',
   'getLifecycle', 'setLifecycle', 'resetLifecycle',
   'moveSource', 'renameDataset', 'deleteDataset', 'apiEndpoints',
+  'deriveDataset', 'proposeNormalization', 'applyNormalization', 'proposeEnums',
+  'saveVersion', 'listVersions', 'diffVersions', 'exportDataset', 'importDataset',
+  'pickDirectory',
+  'canWrite', 'grantWrite', 'revokeWrite', 'proposeWrite', 'proposeWriteFromQuestion',
+  'confirmWrite', 'undoWrite', 'listWrites', 'listTables',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {

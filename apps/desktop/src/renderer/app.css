@@ -352,3 +352,54 @@
 .apireturns code { font-family: var(--mono); font-size: 11px; color: var(--ink2); overflow-wrap: anywhere; }
 .groundbadge { border: 1px solid var(--green-line); background: var(--green-bg); color: var(--green); border-radius: 9px; padding: 9px 12px; font-size: 12.5px; margin-bottom: 14px; }
 .groundbadge b { display: block; }
+
+/* ------------------------------------------------------------ shape/edit */
+.shape, .edit { max-width: 780px; min-width: 0; }
+.shapebox { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 15px 17px; margin-bottom: 14px; box-shadow: var(--sh); min-width: 0; }
+.shapebox h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.shapebox h4 { margin: 12px 0 6px; font-size: 12.5px; font-weight: 600; }
+.shapebox p { margin: 0 0 12px; font-size: 12.5px; color: var(--ink3); }
+.shapebox textarea { width: 100%; min-height: 92px; border: 1px solid var(--line2); border-radius: 9px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; resize: vertical; margin-bottom: 10px; }
+.pickrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; min-width: 0; }
+.pickrow .lb { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink3); }
+.pickrow select { border: 1px solid var(--line2); border-radius: 7px; padding: 5px 9px; font-size: 12.5px; font-family: inherit; max-width: 100%; }
+.kindnote { font-size: 11.5px; color: var(--ink3); margin-left: 10px; }
+
+.entityproposal { border: 1px solid var(--indigo-line); background: var(--indigo-bg); border-radius: 10px; padding: 11px 13px; margin-bottom: 9px; }
+.epname { font-family: var(--mono); font-size: 13px; font-weight: 500; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.epkey { font-size: 10.5px; color: var(--indigo); }
+.epcols { margin: 6px 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.epevidence { font-size: 12px; color: var(--ink2); line-height: 1.5; }
+.enumbox { border-top: 1px solid var(--line); margin-top: 13px; padding-top: 11px; }
+.enumrow { margin-bottom: 9px; }
+.enumvals { font-family: var(--mono); font-size: 11.5px; color: var(--indigo); margin-left: 9px; }
+
+.versionrow { display: flex; align-items: center; gap: 11px; padding: 7px 0; border-bottom: 1px solid #f1f2f6; flex-wrap: wrap; }
+.vlabel { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.vtime { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); }
+.diffbox { margin-top: 11px; border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: #fbfbfc; }
+.diffline { font-family: var(--mono); font-size: 11.5px; color: var(--ink2); padding: 2px 0; overflow-wrap: anywhere; }
+
+/* The gate. It should read as a deliberate pause, not an error and not a success. */
+.writepreview { border: 2px solid var(--amber-line); background: var(--card); border-radius: 12px; padding: 15px 17px; margin-bottom: 14px; box-shadow: var(--sh); min-width: 0; }
+.wphead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.wpcount { font-size: 13.5px; font-weight: 600; }
+.wpnot { margin-left: auto; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-line); border-radius: 20px; padding: 2px 9px; }
+.verb.update { background: var(--indigo-bg); color: var(--indigo); }
+.verb.delete { background: var(--red-bg); color: var(--red); }
+.verb.insert { background: var(--green-bg); color: var(--green); }
+.writewarn { border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; margin-bottom: 9px; }
+.changetable { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 11px; }
+.changetable th { text-align: left; font-family: var(--mono); font-size: 10px; color: var(--ink3); padding: 5px 8px; border-bottom: 1px solid var(--line); text-transform: uppercase; letter-spacing: .05em; font-weight: 500; }
+.changetable td { padding: 5px 8px; border-bottom: 1px solid #f1f2f6; font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.changetable .was { color: var(--ink3); text-decoration: line-through; }
+.changetable .will { color: var(--green); }
+.changetable tr.deleted td { color: var(--red); background: var(--red-bg); font-family: var(--mono); font-size: 11px; }
+
+.koff { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); background: #f1f2f6; border-radius: 5px; padding: 2px 8px; }
+.writelog { min-width: 0; }
+.logrow { display: flex; align-items: center; gap: 11px; padding: 8px 0; border-bottom: 1px solid #f1f2f6; flex-wrap: wrap; }
+.logrow.undone { opacity: .55; }
+.lsql { flex: 1 1 260px; font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; min-width: 0; }
+.lmeta { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); }
+.undonetag { margin-left: 8px; color: var(--amber); }

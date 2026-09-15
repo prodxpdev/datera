@@ -14,6 +14,8 @@ import { Dictionary } from './Dictionary.js';
 import { Serve } from './Serve.js';
 import { Environments } from './Environments.js';
 import { Learn } from './Learn.js';
+import { Shape } from './Shape.js';
+import { Edit } from './Edit.js';
 
 /**
  * P1-17 — the Workspace view.
@@ -30,7 +32,7 @@ const KIND_LABEL: Record<string, string> = {
   sqlite: 'DB', postgres: 'PG', mysql: 'MYSQL',
 };
 
-type NavId = 'workspace' | 'dictionary' | 'ask' | 'sql' | 'models' | 'serve' | 'environments' | 'learn';
+type NavId = 'workspace' | 'dictionary' | 'shape' | 'edit' | 'ask' | 'sql' | 'models' | 'serve' | 'environments' | 'learn';
 
 interface NavItem {
   readonly id: NavId;
@@ -53,6 +55,8 @@ const NAV: readonly NavItem[] = [
   { id: 'sql', icon: '›_', label: 'SQL', enabled: true, title: 'SQL', subtitle: 'write DuckDB SQL, read-only' },
   { id: 'models', icon: '◈', label: 'Models', enabled: true, title: 'Models', subtitle: 'local by default, your key if you want one' },
   { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: true, title: 'Dictionary', subtitle: 'what your columns mean — the layer NL and search use' },
+  { id: 'shape', icon: '◫', label: 'Shape', enabled: true, title: 'Shape', subtitle: 'work on a copy — normalize, version, export' },
+  { id: 'edit', icon: '✎', label: 'Edit', enabled: true, title: 'Edit', subtitle: 'propose a change, see exactly what it does, then confirm' },
   { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: true, title: 'Serve', subtitle: 'tools, connect configs, and the traffic log' },
   { id: 'environments', icon: '☁', label: 'Environments', enabled: true, title: 'Environments', subtitle: 'local, and deployed Datera Servers' },
   { id: 'learn', icon: '◎', label: 'Learn', enabled: true, title: 'Learn', subtitle: 'how a value moves through the whole stack' },
@@ -256,6 +260,10 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           {nav === 'serve' && <Serve api={api} />}
           {nav === 'environments' && <Environments api={api} datasets={loaded.datasets} />}
           {nav === 'learn' && <Learn api={api} />}
+          {nav === 'shape' && (
+            <Shape api={api} datasets={loaded.datasets} sources={loaded.sources} onChanged={() => void refresh()} />
+          )}
+          {nav === 'edit' && <Edit api={api} datasets={loaded.datasets} onChanged={() => void refresh()} />}
 
           {nav === 'workspace' && (loaded.sources.length === 0 ? (
             <div className="empty">

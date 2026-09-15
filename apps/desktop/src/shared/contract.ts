@@ -14,6 +14,13 @@ import type {
   EnvironmentStatus,
   Lifecycle,
   ApiEndpoint,
+  NormalizationProposal,
+  EnumProposal,
+  Version,
+  VersionDiff,
+  WriteProposal,
+  AppliedWrite,
+  ExportResult,
   AuthoredRelationship,
   ColumnDefinition,
   EntityDefinition,
@@ -107,6 +114,29 @@ export interface DateraApi {
   renameDataset(datasetId: string, name: string): Promise<Dataset>;
   deleteDataset(datasetId: string): Promise<void>;
   apiEndpoints(): Promise<readonly ApiEndpoint[]>;
+
+  // ---- Phase 5 -----------------------------------------------------------
+  deriveDataset(datasetId: string, input: { name: string }): Promise<{ datasetId: string; tables: readonly string[] }>;
+  proposeNormalization(sourceId: string): Promise<NormalizationProposal>;
+  applyNormalization(datasetId: string, proposal: NormalizationProposal, input: { name: string }): Promise<{ datasetId: string; tables: readonly string[] }>;
+  proposeEnums(sourceId: string): Promise<readonly EnumProposal[]>;
+  saveVersion(datasetId: string, label: string): Promise<Version>;
+  listVersions(datasetId: string): Promise<readonly Version[]>;
+  diffVersions(fromId: string, toId: string): Promise<VersionDiff>;
+  exportDataset(datasetId: string, directory: string, options?: { format?: 'parquet' | 'csv' }): Promise<ExportResult>;
+  importDataset(directory: string): Promise<{ datasetId: string; tables: readonly string[] }>;
+  pickDirectory(): Promise<string | null>;
+
+  // ---- Phase 6 -----------------------------------------------------------
+  canWrite(datasetId: string): Promise<boolean>;
+  grantWrite(datasetId: string): Promise<void>;
+  revokeWrite(datasetId: string): Promise<void>;
+  proposeWrite(datasetId: string, sql: string): Promise<WriteProposal>;
+  proposeWriteFromQuestion(datasetId: string, instruction: string): Promise<WriteProposal>;
+  confirmWrite(proposalId: string): Promise<AppliedWrite>;
+  undoWrite(writeId: string): Promise<void>;
+  listWrites(datasetId: string): Promise<readonly AppliedWrite[]>;
+  listTables(datasetId: string): Promise<readonly string[]>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -161,6 +191,25 @@ export const IPC = {
   renameDataset: 'datera:renameDataset',
   deleteDataset: 'datera:deleteDataset',
   apiEndpoints: 'datera:apiEndpoints',
+  deriveDataset: 'datera:deriveDataset',
+  proposeNormalization: 'datera:proposeNormalization',
+  applyNormalization: 'datera:applyNormalization',
+  proposeEnums: 'datera:proposeEnums',
+  saveVersion: 'datera:saveVersion',
+  listVersions: 'datera:listVersions',
+  diffVersions: 'datera:diffVersions',
+  exportDataset: 'datera:exportDataset',
+  importDataset: 'datera:importDataset',
+  pickDirectory: 'datera:pickDirectory',
+  canWrite: 'datera:canWrite',
+  grantWrite: 'datera:grantWrite',
+  revokeWrite: 'datera:revokeWrite',
+  proposeWrite: 'datera:proposeWrite',
+  proposeWriteFromQuestion: 'datera:proposeWriteFromQuestion',
+  confirmWrite: 'datera:confirmWrite',
+  undoWrite: 'datera:undoWrite',
+  listWrites: 'datera:listWrites',
+  listTables: 'datera:listTables',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
