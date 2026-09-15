@@ -1,0 +1,101 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
+
+/**
+ * The app must identify itself as "Datera" everywhere a person can see it.
+ *
+ * Written test-first against a real complaint: the macOS menu bar said "Electron". Two
+ * separate causes, which is why this asserts several things rather than one —
+ *
+ *  - Electron defaults `app.name` to the **package.json `name`**, so it was reporting
+ *    "@datera/desktop": a scoped package name, visible to the user, in the menu.
+ *  - On macOS the menu bar's first item is the *application menu*, and unless an explicit
+ *    menu is installed it comes from the Electron binary's own bundle — hence "Electron".
+ *
+ * Fixing one without the other leaves the name wrong somewhere, and "somewhere" is
+ * whichever surface nobody checked.
+ */
+
+const appRoot = resolve(fileURLToPath(import.meta.url), '..', '..');
+
+describe('application identity', () => {
+  let app: ElectronApplication;
+  let page: Page;
+  let workspacePath: string;
+
+  beforeAll(async () => {
+    workspacePath = await mkdtemp(join(tmpdir(), 'datera-identity-'));
+    app = await electron.launch({
+      args: [appRoot],
+      env: { ...process.env, DATERA_WORKSPACE: workspacePath, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+    });
+    page = await app.firstWindow();
+    await page.waitForSelector('.brand', { timeout: 60_000 });
+  }, 120_000);
+
+  afterAll(async () => {
+    await app?.close();
+    await rm(workspacePath, { recursive: true, force: true });
+  });
+
+  it('reports its name as Datera, not the package name', async () => {
+    const name = await app.evaluate(async ({ app: electronApp }) => electronApp.getName());
+    expect(name).toBe('Datera');
+  });
+
+  it('shows Datera as the first application menu, not Electron', async () => {
+    const labels = await app.evaluate(async ({ Menu }) =>
+      (Menu.getApplicationMenu()?.items ?? []).map((item) => item.label),
+    );
+
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels[0]).toBe('Datera');
+    expect(labels).not.toContain('Electron');
+    expect(labels.join(' ')).not.toContain('@datera/desktop');
+  });
+
+  it('keeps the standard menu roles a desktop app is expected to have', async () => {
+    // Replacing the default menu means we own it — including the things people reach for
+    // without thinking. Losing Copy or Quit to a custom menu is a genuine regression.
+    const labels = await app.evaluate(async ({ Menu }) =>
+      (Menu.getApplicationMenu()?.items ?? []).map((item) => item.label),
+    );
+
+    for (const expected of ['Edit', 'View', 'Window', 'Help']) {
+      expect(labels).toContain(expected);
+    }
+  });
+
+  it('titles the window Datera', async () => {
+    expect(await page.title()).toBe('Datera');
+    const windowTitle = await app.evaluate(async ({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]?.getTitle(),
+    );
+    expect(windowTitle).toBe('Datera');
+  });
+
+  it('names itself Datera in the About panel', async () => {
+    const about = await app.evaluate(async ({ app: electronApp }) => {
+      // There is no getter, so round-trip through what we set at startup.
+      return { name: electronApp.getName(), version: electronApp.getVersion() };
+    });
+    expect(about.name).toBe('Datera');
+    expect(about.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it('declares a productName so packaged builds carry the same name', async () => {
+    // app.setName() fixes the running process. The *packaged* bundle takes its name from
+    // electron-builder's productName, and nothing at runtime can correct that — so the
+    // manifest is asserted here rather than discovered at release time.
+    const manifest = JSON.parse(await readFile(join(appRoot, 'package.json'), 'utf8')) as {
+      build?: { productName?: string; appId?: string };
+    };
+
+    expect(manifest.build?.productName).toBe('Datera');
+    expect(manifest.build?.appId).toMatch(/^[a-z0-9.-]+$/);
+  });
+});

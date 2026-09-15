@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Datera, DateraError, type AddSourceRequest, type PreviewOptions } from '@datera/core';
@@ -24,6 +24,20 @@ const appRoot = resolve(distRoot, '..');
  * out of a sandboxed browser context and means the same contract can later be fulfilled
  * by an HTTP client pointed at a Datera Server (acceptance §12.10).
  */
+
+const APP_NAME = 'Datera';
+
+/**
+ * Set before anything else, and before `whenReady`.
+ *
+ * Electron defaults `app.name` to package.json's `name`, which here is the scoped package
+ * "@datera/desktop" — a build detail, shown to the user in the menu bar and the About
+ * panel. It has to be set this early because the menu and the dock read it during startup.
+ *
+ * This fixes the *running* process. The packaged bundle takes its name from
+ * electron-builder's `productName`, which is set in package.json — see the identity test.
+ */
+app.setName(APP_NAME);
 
 let datera: Datera | null = null;
 let window: BrowserWindow | null = null;
@@ -114,6 +128,86 @@ function registerHandlers(): void {
   });
 }
 
+/**
+ * Install an explicit application menu.
+ *
+ * On macOS the first menu is the *application* menu, and without a menu of our own it is
+ * built from the Electron binary's bundle — which is why an unpackaged app says
+ * "Electron" no matter what `app.setName` is set to.
+ *
+ * Owning the menu means owning all of it, so the standard roles are kept deliberately:
+ * losing Copy, Paste, or Quit to a hand-rolled menu is a real regression, and they are
+ * the things people reach for without looking.
+ */
+function installApplicationMenu(): void {
+  const isMac = process.platform === 'darwin';
+
+  const appMenu: Electron.MenuItemConstructorOptions = {
+    label: APP_NAME,
+    submenu: [
+      { role: 'about', label: `About ${APP_NAME}` },
+      { type: 'separator' },
+      ...(isMac
+        ? ([
+            { role: 'hide', label: `Hide ${APP_NAME}` },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+          ] as Electron.MenuItemConstructorOptions[])
+        : []),
+      { role: 'quit', label: `Quit ${APP_NAME}` },
+    ],
+  };
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    appMenu,
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Connect Data…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => {
+            void window?.webContents.executeJavaScript(
+              'window.dispatchEvent(new CustomEvent("datera:connect-data"))',
+            );
+          },
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Datera on GitHub',
+          click: () => {
+            void shell.openExternal('https://github.com/prodxpdev/datera');
+          },
+        },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow(): void {
   window = new BrowserWindow({
     width: 1280,
@@ -154,6 +248,13 @@ app.whenReady().then(async () => {
     });
   });
 
+  app.setAboutPanelOptions({
+    applicationName: APP_NAME,
+    applicationVersion: app.getVersion(),
+    credits: 'Local-first, read-only by default. Built on DuckDB.',
+  });
+
+  installApplicationMenu();
   registerHandlers();
 
   try {

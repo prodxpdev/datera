@@ -26,6 +26,7 @@ export interface FixturePaths {
   readonly workbookXlsx: string;
   readonly customersSqlite: string;
   readonly largeParquet: string;
+  readonly wideCsv: string;
 }
 
 export function fixturePaths(root: string): FixturePaths {
@@ -42,6 +43,7 @@ export function fixturePaths(root: string): FixturePaths {
     workbookXlsx: join(root, 'workbook.xlsx'),
     customersSqlite: join(root, 'customers.sqlite'),
     largeParquet: join(root, 'large.parquet'),
+    wideCsv: join(root, 'studio_results_20260421_1238.csv'),
   };
 }
 
@@ -106,6 +108,20 @@ const NESTED_JSON = `[
 ]
 `;
 
+/**
+ * Many columns, long values, and timezone-bearing timestamps.
+ *
+ * Modelled on a real file that broke the Workspace layout: enough columns that the schema
+ * chips and the preview table both exceed a laptop window, which is the condition the
+ * responsive tests exist to pin down. Fixtures that are all small and tidy are how layout
+ * bugs reach users.
+ */
+const WIDE_CSV = `import_id,status,current_stage,status_message,started_at,updated_at,processing_expires_at,processed_rows,imported_rows,failed_rows,source_uri,operator_email
+2046581965196365824,processing,zip_coverage,Scanning ZIP coverage rows,2026-04-21 09:29:01.496974-04,2026-04-21 09:31:44.102233-04,2026-04-21 10:29:01.496974-04,184320,183991,329,s3://studio-imports/2026/04/21/batch-1238.parquet,operations-intake@example.com
+2046581965196365825,complete,finalize,All rows imported successfully,2026-04-21 08:02:11.000001-04,2026-04-21 08:19:52.773100-04,2026-04-21 09:02:11.000001-04,942117,942117,0,s3://studio-imports/2026/04/21/batch-1237.parquet,operations-intake@example.com
+2046581965196365826,failed,validate,Rejected: 12 rows missing a required postal code,2026-04-20 22:14:03.551000-04,2026-04-20 22:14:59.118000-04,2026-04-20 23:14:03.551000-04,12,0,12,s3://studio-imports/2026/04/20/batch-1199.parquet,nightly-loader@example.com
+`;
+
 /** Rows in the large fixture. Enough that a full scan is measurably slower than a preview. */
 export const LARGE_FIXTURE_ROWS = 1_000_000;
 
@@ -121,6 +137,7 @@ export async function generateFixtures(root: string = defaultFixtureRoot()): Pro
   await writeFile(paths.ordersTsv, ORDERS_CSV.replace(/,/g, '\t'), 'utf8');
   await writeFile(paths.notesNdjson, NOTES_NDJSON, 'utf8');
   await writeFile(paths.nestedJson, NESTED_JSON, 'utf8');
+  await writeFile(paths.wideCsv, WIDE_CSV, 'utf8');
 
   await writeXlsx(paths.workbookXlsx, [
     {

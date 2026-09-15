@@ -146,12 +146,12 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand"><span className="m" />Datera</div>
+        <div className="brand"><span className="m" /><span className="bt">Datera</span></div>
         <div className="grp">Client</div>
         {NAV.map(([icon, label, enabled]) => (
-          <div key={label} className={`nav ${enabled ? 'on' : 'off'}`} title={enabled ? undefined : 'Not in Phase 1'}>
+          <div key={label} className={`nav ${enabled ? 'on' : 'off'}`} title={label}>
             <span className="ic">{icon}</span>
-            <span>{label}</span>
+            <span className="tx">{label}</span>
           </div>
         ))}
         <div className="foot">

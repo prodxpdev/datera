@@ -1,4 +1,13 @@
-.shell { display: grid; grid-template-columns: 216px 1fr; height: 100vh; }
+/*
+ * `minmax(0, 1fr)`, not `1fr`.
+ *
+ * A grid track sized `1fr` refuses to shrink below its content's min-content width, so a
+ * wide table silently widens the whole page instead of scrolling inside its own box — and
+ * because .pane scrolls vertically, the overflow is not even reachable. Every column that
+ * can receive wide content is minmax(0, …) for this reason, and every intermediate
+ * container carries `min-width: 0` so the constraint actually propagates.
+ */
+.shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); height: 100vh; overflow: hidden; }
 
 /* sidebar */
 .side { border-right: 1px solid var(--line); background: #f6f7f9; display: flex; flex-direction: column; }
@@ -12,15 +21,16 @@
 .side .foot { margin-top: auto; padding: 11px 15px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10px; color: var(--ink3); display: flex; flex-direction: column; gap: 3px; }
 
 /* main */
-.mainwrap { display: flex; flex-direction: column; overflow: hidden; }
+.mainwrap { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 .mtop { padding: 16px 22px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
 .mtop h1 { font-size: 19px; margin: 0; font-weight: 600; letter-spacing: -.01em; }
 .mtop .desc { color: var(--ink3); font-size: 12.5px; }
-.pane { padding: 18px 22px 28px; overflow: auto; flex: 1; }
+.pane { padding: 18px 22px 28px; overflow: auto; flex: 1; min-width: 0; }
 
-.banner { font-size: 12px; padding: 7px 22px; border-bottom: 1px solid var(--green-line); background: var(--green-bg); color: var(--green); font-family: var(--mono); }
+.banner { font-size: 12px; padding: 7px 22px; border-bottom: 1px solid var(--green-line); background: var(--green-bg); color: var(--green); font-family: var(--mono); overflow-wrap: anywhere; }
 
-.wsgrid { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start; }
+.wsgrid { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; min-width: 0; }
+.wsgrid > * { min-width: 0; }
 
 /* dataset rail */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh); }
@@ -29,11 +39,12 @@
 .dsh { padding: 6px 7px; display: flex; justify-content: space-between; align-items: baseline; }
 .dsn { font-weight: 600; font-size: 13px; }
 .dsc { font-family: var(--mono); font-size: 10px; color: var(--ink3); }
-.srcitem { display: flex; gap: 9px; align-items: center; padding: 6px 7px; border-radius: 8px; cursor: pointer; }
+.srcitem { display: flex; gap: 9px; align-items: center; padding: 6px 7px; border-radius: 8px; cursor: pointer; min-width: 0; }
+.srcitem > div { min-width: 0; }
 .srcitem:hover { background: #f2f3f7; }
 .srcitem.on { background: var(--indigo-bg); }
-.srcitem .ic { font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; background: var(--card); border: 1px solid var(--line2); border-radius: 5px; padding: 2px 4px; color: var(--ink2); min-width: 34px; text-align: center; }
-.srcitem .nm { font-size: 12.5px; font-weight: 500; }
+.srcitem .ic { flex: 0 0 auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; background: var(--card); border: 1px solid var(--line2); border-radius: 5px; padding: 2px 4px; color: var(--ink2); min-width: 34px; text-align: center; }
+.srcitem .nm { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
 .srcitem .ct { font-family: var(--mono); font-size: 10px; color: var(--ink3); }
 .srcitem.gone .nm { color: var(--ink3); text-decoration: line-through; }
 .emptyrail { padding: 10px 12px 14px; font-size: 12px; color: var(--ink3); }
@@ -45,31 +56,31 @@
 .btn:disabled { opacity: .5; cursor: default; }
 
 /* detail */
-.dsbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+.dsbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; min-width: 0; }
 .dsbn { font-size: 16px; font-weight: 600; }
-.dsbd { color: var(--ink3); font-size: 12.5px; max-width: 70ch; }
+.dsbd { color: var(--ink3); font-size: 12.5px; max-width: 70ch; overflow-wrap: anywhere; }
 .scope { font-family: var(--mono); font-size: 10px; color: var(--ink3); border: 1px solid var(--line2); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
 
-.schips { margin: 14px 0 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-.schip { font-family: var(--mono); font-size: 11px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; }
+.schips { margin: 14px 0 10px; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.schip { font-family: var(--mono); font-size: 11px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; max-width: 100%; overflow-wrap: anywhere; }
 .schip .ty { color: var(--indigo); }
 .schip .nulls { color: var(--ink3); }
 .schip.flagged { border-color: var(--amber-line); background: var(--amber-bg); }
 
-.prev { border: 1px solid var(--line); border-radius: 10px; overflow: auto; background: var(--card); max-height: 44vh; }
-.prev table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.prev { border: 1px solid var(--line); border-radius: 10px; overflow: auto; background: var(--card); max-height: 44vh; min-width: 0; max-width: 100%; }
+.prev table { border-collapse: collapse; font-size: 12.5px; min-width: 100%; width: max-content; }
 .prev th { position: sticky; top: 0; background: #f6f7f9; text-align: left; font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink2); padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .prev td { padding: 6px 10px; border-bottom: 1px solid #f1f2f6; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .prev td.null { color: var(--ink3); font-style: italic; }
 
-.readonly { margin-top: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-line); border-radius: 7px; padding: 6px 10px; }
-.pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--ink3); }
+.readonly { margin-top: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--green); background: var(--green-bg); border: 1px solid var(--green-line); border-radius: 7px; padding: 6px 10px; overflow-wrap: anywhere; }
+.pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--ink3); flex-wrap: wrap; min-width: 0; }
 
-.detail { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.detail { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
 .detail h3 { font-size: 12px; font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); margin: 0 0 8px; font-weight: 500; }
-.kv { display: grid; grid-template-columns: 170px 1fr; gap: 3px 14px; font-size: 12px; }
+.kv { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 3px 14px; font-size: 12px; min-width: 0; }
 .kv dt { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); }
-.kv dd { margin: 0; font-family: var(--mono); font-size: 11.5px; word-break: break-word; }
+.kv dd { margin: 0; font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; min-width: 0; }
 
 .warn { margin-top: 10px; border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; }
 .warn b { display: block; margin-bottom: 2px; }
@@ -79,3 +90,33 @@
 .empty { text-align: center; padding: 60px 20px; color: var(--ink3); }
 .empty h2 { color: var(--ink); font-size: 17px; font-weight: 600; margin: 0 0 6px; }
 .empty p { max-width: 52ch; margin: 0 auto 18px; font-size: 13px; }
+
+
+/* ---------------------------------------------------------------- responsive
+ *
+ * Two breakpoints, both chosen because of what the *data* needs rather than because of a
+ * device. Below ~1100px the two-column workspace leaves the preview table too narrow to
+ * read, so the rail moves above it. Below ~980px the sidebar's labels are costing more
+ * width than they earn, so it collapses to icons and gives the room to the data.
+ */
+@media (max-width: 1100px) {
+  .wsgrid { grid-template-columns: minmax(0, 1fr); }
+  .prev { max-height: 38vh; }
+}
+
+@media (max-width: 980px) {
+  .shell { grid-template-columns: 56px minmax(0, 1fr); }
+  .side .tx, .side .brand .bt, .side .grp, .side .foot span { display: none; }
+  .side .brand { justify-content: center; padding: 16px 0 12px; }
+  .nav { justify-content: center; padding: 9px 0; gap: 0; }
+  .nav.on { border-radius: 0; }
+  .side .foot { padding: 11px 0; align-items: center; }
+  .side .foot::before { content: '●'; color: var(--green); font-size: 9px; }
+  .mtop, .pane, .banner { padding-left: 14px; padding-right: 14px; }
+}
+
+@media (max-width: 720px) {
+  .mtop { flex-direction: column; gap: 2px; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
+  .kv dt { margin-top: 7px; }
+}
