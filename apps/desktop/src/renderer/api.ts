@@ -30,7 +30,7 @@ const METHODS = [
   'engineInfo', 'listDatasets', 'listSources', 'addSource', 'removeSource',
   'getSchema', 'preview', 'query', 'pickFiles',
   'ask', 'listModels', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
-  'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmColumns', 'confirmEntity',
+  'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmColumns', 'confirmEntity', 'schemaGraph',
   'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',
   'explainTouched',
   'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',

@@ -121,6 +121,8 @@ export { extractSql } from './query/sql-extract.js';
 export { assertWithinDataset, extractTableReferences } from './query/scope.js';
 export { summariseTouched } from './query/touched.js';
 export { completionsAt, referencedTables, starterSql } from './query/schema-graph.js';
+export { suggestQuestions } from './query/suggest.js';
+export type { Suggestion, SuggestionKind } from './query/suggest.js';
 export type {
   CompletionItem, CompletionKind, CompletionResult,
   GraphColumn, GraphRelationship, GraphTable, SchemaGraph,

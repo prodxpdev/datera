@@ -60,10 +60,10 @@ describe('Ask and the transparency drawer', () => {
   });
 
   async function askInUi(question: string): Promise<void> {
-    await page.click('[data-nav="ask"]');
+    await page.click('[data-nav="query"]');
     await page.waitForSelector('.askbar input');
     await page.fill('.askbar input', question);
-    await page.click('.askbar button');
+    await page.click('[data-ask]');
     await page.waitForSelector('.card.ans, .flag', { timeout: 30_000 });
   }
 
@@ -71,8 +71,8 @@ describe('Ask and the transparency drawer', () => {
     server.setReply('SELECT product, sum(revenue_cents) AS revenue FROM orders GROUP BY product ORDER BY revenue DESC');
     await askInUi('top products by revenue');
 
-    await expect.poll(async () => page.$$eval('.ansrows tbody tr', (r) => r.length)).toBeGreaterThan(0);
-    expect(await page.textContent('.ansrows')).toContain('Trail Hoodie');
+    await expect.poll(async () => page.$$eval('.card.ans .prev tbody tr', (r) => r.length)).toBeGreaterThan(0);
+    expect(await page.textContent('.card.ans .prev')).toContain('Trail Hoodie');
   });
 
   it('shows citations for the answer', async () => {
@@ -127,7 +127,7 @@ describe('Ask and the transparency drawer', () => {
 
     const flag = await page.textContent('.flag');
     expect(flag).toMatch(/read-only|refused/i);
-    expect(await page.$('.ansrows')).toBeNull();
+    expect(await page.$('.card.ans .prev')).toBeNull();
   });
 
   it('flags an unanswerable question instead of inventing a number', async () => {
@@ -136,24 +136,27 @@ describe('Ask and the transparency drawer', () => {
 
     const flag = await page.textContent('.flag');
     expect(flag).toContain('sentiment');
-    expect(await page.$('.ansrows')).toBeNull();
+    expect(await page.$('.card.ans .prev')).toBeNull();
   });
 
   it('runs hand-written SQL in the SQL view, with the same guard', async () => {
-    await page.click('[data-nav="sql"]');
+    // Same surface now — no navigation. The editor is always there.
     await page.waitForSelector('.sqled textarea');
 
     await page.fill('.sqled textarea', 'SELECT count(*) AS n FROM orders');
     await page.click('[data-runsql]');
-    await expect.poll(async () => page.textContent('.sqlres')).toContain('6');
+    await expect.poll(async () => page.textContent('.sqlres'), { timeout: 20_000 }).toContain('6');
 
     await page.fill('.sqled textarea', 'DELETE FROM orders');
     await page.click('[data-runsql]');
-    await expect.poll(async () => page.textContent('.sqlres')).toMatch(/READ_ONLY_VIOLATION|read-only/i);
+    await expect.poll(async () => page.textContent('.query'), { timeout: 20_000 }).toMatch(/READ_ONLY_VIOLATION|read-only/i);
   });
 
   it('lists model tiers in the Models view without revealing any key', async () => {
-    await page.click('[data-nav="models"]');
+    // Models moved into Settings — it is setup, not a place you work.
+    await page.click('[data-nav="settings"]');
+    await page.waitForSelector('[data-settab="models"]');
+    await page.click('[data-settab="models"]');
     await page.waitForSelector('.models');
 
     const text = await page.textContent('.models');

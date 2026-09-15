@@ -41,7 +41,7 @@ describe('Dictionary drafting', () => {
 
     await page.reload();
     await page.waitForSelector('.srcitem', { timeout: 30_000 });
-    await page.click('[data-nav="dictionary"]');
+    await page.click('[data-nav="meaning"]');
     await page.waitForSelector('.dicttbl', { timeout: 30_000 });
   }, 120_000);
 

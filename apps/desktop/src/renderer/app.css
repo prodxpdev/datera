@@ -403,3 +403,152 @@
 .lsql { flex: 1 1 260px; font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; min-width: 0; }
 .lmeta { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); }
 .undonetag { margin-left: 8px; color: var(--amber); }
+
+/* ===========================================================================
+ * The consolidated shell: dataset switcher, Settings, the merged Query surface.
+ * =========================================================================== */
+
+/* --- chrome ---------------------------------------------------------------- */
+.mtop { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.dspick { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dspl { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink3); }
+.dspick select {
+  font-family: var(--body); font-size: 12.5px; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line2); border-radius: 8px; padding: 5px 9px; max-width: 260px;
+}
+.dspick select:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+
+/* Settings sits at the foot of the rail, not among the destinations — it is setup, and
+   .foot already claimed the flex slack, which is what parked it mid-column. */
+.settingsnav { margin-top: auto; border-top: 1px solid var(--line); padding: 11px 15px 10px; }
+.side .foot { margin-top: 0; }
+.settingsnav .kbd { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--ink3); }
+
+.dsgroup.on .dsh { background: var(--indigo-bg); border-radius: 7px; }
+.dsh { cursor: pointer; padding: 4px 6px; }
+
+/* --- Settings dialog ------------------------------------------------------- */
+.settings {
+  position: fixed; inset: 6vh 8vw; z-index: 60; background: var(--card);
+  border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 20px 70px rgba(18, 22, 28, .28);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.seth { display: flex; align-items: center; padding: 15px 20px; border-bottom: 1px solid var(--line); }
+.seth h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.seth .x { margin-left: auto; }
+.setbody { display: grid; grid-template-columns: 178px minmax(0, 1fr); flex: 1; min-height: 0; }
+.settabs { border-right: 1px solid var(--line); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px; }
+.settabs button {
+  text-align: left; border: 0; background: none; font-family: var(--body); font-size: 13px;
+  color: var(--ink2); padding: 7px 11px; border-radius: 8px; cursor: pointer;
+}
+.settabs button:hover { background: var(--bg); }
+.settabs button.on { background: var(--indigo-bg); color: var(--indigo); font-weight: 500; }
+.setpane { padding: 18px 22px; overflow-y: auto; min-width: 0; }
+
+.grantrow { display: flex; align-items: center; gap: 11px; padding: 8px 0; border-bottom: 1px solid #f1f2f6; flex-wrap: wrap; }
+.gn { font-size: 13px; font-weight: 500; }
+.gk { font-family: var(--mono); font-size: 10px; color: var(--ink3); }
+.gstate { margin-left: auto; font-size: 11.5px; }
+.gstate.on { color: var(--amber); font-weight: 500; }
+.gstate.off { color: var(--ink3); }
+
+/* --- suggestions ----------------------------------------------------------- */
+.suggestions { display: grid; gap: 7px; margin-bottom: 15px; min-width: 0; }
+.sughead { font-size: 12.5px; color: var(--ink3); line-height: 1.55; max-width: 70ch; }
+.sugg {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 13px; cursor: pointer; font-family: var(--body);
+}
+.sugg:hover { border-color: var(--indigo-line); background: var(--indigo-bg); }
+.sugk {
+  grid-row: span 2; font-family: var(--mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink3); border: 1px solid var(--line2); border-radius: 20px;
+  padding: 2px 7px; height: fit-content; margin-top: 2px;
+}
+.sugq { font-size: 13.5px; color: var(--ink); }
+.sugw { font-size: 11.5px; color: var(--ink3); line-height: 1.5; }
+
+/* --- history --------------------------------------------------------------- */
+.history { margin-bottom: 15px; min-width: 0; }
+.history > summary { font-size: 12.5px; color: var(--ink2); cursor: pointer; padding: 5px 0; }
+.histrow {
+  display: flex; gap: 12px; align-items: baseline; width: 100%; text-align: left;
+  background: none; border: 0; border-bottom: 1px solid #f1f2f6; padding: 7px 4px;
+  cursor: pointer; font-family: var(--body); min-width: 0;
+}
+.histrow:hover { background: var(--bg); }
+.histrow.failed .hq { color: var(--red); }
+.hq { flex: 1 1 auto; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm { font-family: var(--mono); font-size: 10px; color: var(--ink3); white-space: nowrap; }
+.histnote { font-size: 11.5px; color: var(--ink3); padding: 8px 4px 0; }
+
+/* --- editor + completions -------------------------------------------------- */
+.sqlwrap { position: relative; }
+.sqlfoot { font-size: 11px; color: var(--ink3); padding: 7px 13px 10px; font-family: var(--mono); }
+.acbox {
+  position: absolute; left: 13px; bottom: 9px; z-index: 30; width: min(460px, calc(100% - 26px));
+  background: var(--card); border: 1px solid var(--line2); border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(18, 22, 28, .18); overflow: hidden; max-height: 260px; overflow-y: auto;
+}
+.acitem {
+  display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
+  background: none; border: 0; padding: 6px 11px; cursor: pointer; font-family: var(--body); min-width: 0;
+}
+.acitem.on, .acitem:hover { background: var(--indigo-bg); }
+.ack {
+  font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink3); border: 1px solid var(--line2); border-radius: 20px; padding: 1px 6px; flex: 0 0 auto;
+}
+.ack.column { color: var(--indigo); border-color: var(--indigo-line); }
+.ack.table { color: var(--green); border-color: var(--green-line); }
+.ack.join { color: var(--violet); }
+.acl { font-family: var(--mono); font-size: 12px; flex: 0 0 auto; }
+.acd { font-size: 11px; color: var(--ink3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.achint { font-family: var(--mono); font-size: 9.5px; color: var(--ink3); padding: 6px 11px; border-top: 1px solid var(--line); }
+
+/* --- schema map ------------------------------------------------------------ */
+.mapbox { margin-bottom: 16px; min-width: 0; }
+.maptitle { font-size: 12px; color: var(--ink3); margin-bottom: 9px; }
+.schemamap {
+  position: relative; display: flex; flex-wrap: wrap; gap: 18px; padding: 16px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; min-width: 0;
+}
+.maplines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.maplines line { stroke: var(--line2); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.maplines line.lit { stroke: var(--indigo); stroke-width: 2; stroke-dasharray: none; }
+
+.mapcard {
+  border: 1px solid var(--line2); border-radius: 10px; background: var(--card);
+  min-width: 190px; max-width: 280px; overflow: hidden; transition: opacity .15s, border-color .15s;
+}
+.mapcard.lit { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-bg); }
+.mapcard.dim { opacity: .42; }
+.maphead {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg); border: 0; border-bottom: 1px solid var(--line); padding: 8px 11px;
+  font-family: var(--body);
+}
+.mtn { font-family: var(--mono); font-size: 12.5px; font-weight: 500; }
+.mtr { font-size: 10px; color: var(--ink3); }
+.mtx { margin-left: auto; color: var(--ink3); font-family: var(--mono); }
+.mapcols { padding: 6px 0; }
+.mapcol { display: flex; align-items: baseline; gap: 7px; padding: 3px 11px; cursor: pointer; min-width: 0; }
+.mapcol:hover { background: var(--indigo-bg); }
+.mapcol.key .mcn { color: var(--indigo); font-weight: 500; }
+.mcn { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.mct { font-family: var(--mono); font-size: 9.5px; color: var(--ink3); margin-left: auto; white-space: nowrap; }
+.mck { font-family: var(--mono); font-size: 8.5px; color: var(--indigo); }
+.mapmore { padding: 3px 11px; font-size: 11px; }
+.maphidden { font-size: 10.5px; color: var(--ink3); padding: 4px 11px; }
+.maphint { flex: 1 1 100%; font-size: 12px; color: var(--ink2); line-height: 1.55; }
+
+.logpolicyhint { font-size: 11.5px; color: var(--ink3); margin-left: auto; }
+
+@media (max-width: 980px) {
+  .settings { inset: 2vh 3vw; }
+  .setbody { grid-template-columns: minmax(0, 1fr); }
+  .settabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .dspick { margin-left: 0; width: 100%; }
+}

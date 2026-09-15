@@ -7,24 +7,30 @@ import type {
   SourceWithStatus,
 } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
-import { Ask } from './Ask.js';
-import { SqlView } from './SqlView.js';
-import { Models } from './Models.js';
+import { Query } from './Query.js';
 import { Dictionary } from './Dictionary.js';
-import { Serve } from './Serve.js';
-import { Environments } from './Environments.js';
+import { Activity } from './Activity.js';
 import { Learn } from './Learn.js';
 import { Shape } from './Shape.js';
 import { Edit } from './Edit.js';
+import { Settings } from './Settings.js';
 
 /**
- * P1-17 — the Workspace view.
+ * The application shell.
  *
- * The prototype's information architecture, limited to what Phase 1 actually does: the
- * dataset rail, the source list, schema chips with types, a paged preview, and the
- * read-only badge. Dictionary, Ask, SQL, Serve, Environments and Learn are shown disabled
- * rather than hidden — a user should be able to see where the product is going, and a
- * missing nav item reads as a bug in a way a greyed one does not.
+ * The sidebar used to carry one item per build phase — Workspace, Ask, SQL, Models,
+ * Dictionary, Shape, Edit, Serve, Environments, Learn, which is phases one through nine
+ * in order. It read as a record of how the product was made rather than a map of what you
+ * do with it, and nobody works in that order.
+ *
+ * Five items now, grouped by intent. Setup — models, servers, connect configs, retention,
+ * write grants — moved into Settings, because none of it is a place you work. Ask and SQL
+ * merged, because they were always one activity running one engine.
+ *
+ * The dataset switcher lives in the chrome rather than being re-asked by four views. The
+ * dataset is the boundary the product guarantees — sources in different datasets can
+ * never be joined — and a guarantee that strong should be visible at all times, not
+ * rediscovered per screen.
  */
 
 const KIND_LABEL: Record<string, string> = {
@@ -32,7 +38,9 @@ const KIND_LABEL: Record<string, string> = {
   sqlite: 'DB', postgres: 'PG', mysql: 'MYSQL',
 };
 
-type NavId = 'workspace' | 'dictionary' | 'shape' | 'edit' | 'ask' | 'sql' | 'models' | 'serve' | 'environments' | 'learn';
+type NavId = 'data' | 'query' | 'meaning' | 'changes' | 'activity';
+type DataTab = 'sources' | 'shape';
+type MeaningTab = 'dictionary' | 'learn';
 
 interface NavItem {
   readonly id: NavId;
@@ -43,23 +51,13 @@ interface NavItem {
   readonly subtitle: string;
 }
 
-/**
- * Views that exist, and views that do not.
- *
- * The unbuilt ones stay visible but disabled. A user should be able to see where the
- * product is going, and a missing nav item reads as a bug in a way a greyed one does not.
- */
+/** Five destinations, named for what you are trying to do. */
 const NAV: readonly NavItem[] = [
-  { id: 'workspace', icon: '▤', label: 'Workspace', enabled: true, title: 'Workspace', subtitle: 'your local data sources' },
-  { id: 'ask', icon: '◇', label: 'Ask', enabled: true, title: 'Ask', subtitle: 'natural language, with the receipts' },
-  { id: 'sql', icon: '›_', label: 'SQL', enabled: true, title: 'SQL', subtitle: 'write DuckDB SQL, read-only' },
-  { id: 'models', icon: '◈', label: 'Models', enabled: true, title: 'Models', subtitle: 'local by default, your key if you want one' },
-  { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: true, title: 'Dictionary', subtitle: 'what your columns mean — the layer NL and search use' },
-  { id: 'shape', icon: '◫', label: 'Shape', enabled: true, title: 'Shape', subtitle: 'work on a copy — normalize, version, export' },
-  { id: 'edit', icon: '✎', label: 'Edit', enabled: true, title: 'Edit', subtitle: 'propose a change, see exactly what it does, then confirm' },
-  { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: true, title: 'Serve', subtitle: 'tools, connect configs, and the traffic log' },
-  { id: 'environments', icon: '☁', label: 'Environments', enabled: true, title: 'Environments', subtitle: 'local, and deployed Datera Servers' },
-  { id: 'learn', icon: '◎', label: 'Learn', enabled: true, title: 'Learn', subtitle: 'how a value moves through the whole stack' },
+  { id: 'data', icon: '▤', label: 'Data', enabled: true, title: 'Data', subtitle: 'sources, groups, working copies and exports' },
+  { id: 'query', icon: '◇', label: 'Query', enabled: true, title: 'Query', subtitle: 'ask in words or write SQL — same engine, same guard' },
+  { id: 'meaning', icon: '⌗', label: 'Meaning', enabled: true, title: 'Meaning', subtitle: 'what your columns mean, and how a value reaches the screen' },
+  { id: 'changes', icon: '✎', label: 'Changes', enabled: true, title: 'Changes', subtitle: 'propose a change, see exactly what it does, then confirm' },
+  { id: 'activity', icon: '⇄', label: 'Activity', enabled: true, title: 'Activity', subtitle: 'what agents can call, and every request that ran' },
 ];
 
 const PAGE_SIZE = 50;
@@ -78,7 +76,12 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [nav, setNav] = useState<NavId>('workspace');
+  const [nav, setNav] = useState<NavId>('data');
+  const [dataTab, setDataTab] = useState<DataTab>('sources');
+  const [meaningTab, setMeaningTab] = useState<MeaningTab>('dictionary');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // The governing boundary, held once for the whole app instead of re-asked per view.
+  const [datasetId, setDatasetId] = useState<string | null>(null);
   const [newDataset, setNewDataset] = useState(false);
   const [newName, setNewName] = useState('');
   const [movingId, setMovingId] = useState<string | null>(null);
@@ -94,6 +97,9 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
         api.engineInfo(), api.listDatasets(), api.listSources(),
       ]);
       setLoaded({ engine, datasets, sources });
+      setDatasetId((current) =>
+        current !== null && datasets.some((d) => d.id === current) ? current : datasets[0]?.id ?? null,
+      );
       setSelectedId((current) =>
         current !== null && sources.some((s) => s.id === current) ? current : sources[0]?.id ?? null,
       );
@@ -114,6 +120,18 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   useEffect(() => {
     setOffset(0);
   }, [selectedId]);
+
+  // ⌘, is where every desktop application on this machine puts its settings.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (selected === null) {
@@ -205,7 +223,8 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
     return <div className="empty">Opening the workspace…</div>;
   }
 
-  const dataset = loaded.datasets[0];
+  const dataset = loaded.datasets.find((d) => d.id === datasetId) ?? loaded.datasets[0];
+  const activeId = dataset?.id ?? 'ungrouped';
   const current = NAV.find((n) => n.id === nav) ?? NAV[0]!;
 
   return (
@@ -227,6 +246,17 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
             <span className="tx">{item.label}</span>
           </div>
         ))}
+        <div
+          className="nav idle settingsnav"
+          data-nav="settings"
+          title="Settings (⌘,)"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <span className="ic">⚙</span>
+          <span className="tx">Settings</span>
+          <span className="kbd">⌘,</span>
+        </div>
+
         <div className="foot">
           <span>DuckDB {loaded.engine.duckdbVersion}</span>
           <span>{loaded.engine.driver}</span>
@@ -240,6 +270,23 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
         <div className="mtop">
           <h1>{current.title}</h1>
           <span className="desc">{current.subtitle}</span>
+
+          {/* The boundary, always on screen. Sources in different datasets can never be
+              joined, and a guarantee that strong should not be a per-view dropdown. */}
+          <label className="dspick" title="Everything below is scoped to this dataset">
+            <span className="dspl">Dataset</span>
+            <select
+              data-dataset-switch
+              value={dataset?.id ?? ''}
+              onChange={(e) => setDatasetId(e.target.value)}
+            >
+              {loaded.datasets.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} · {loaded.sources.filter((x) => x.datasetId === d.id).length} source(s)
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="pane">
@@ -249,23 +296,71 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
             </div>
           )}
 
-          {nav === 'ask' && (
-            <Ask api={api} datasetId={dataset?.id ?? 'ungrouped'} datasetName={dataset?.name ?? 'Ungrouped'} />
+          {nav === 'query' && (
+            <Query
+              key={activeId}
+              api={api}
+              datasetId={activeId}
+              datasetName={dataset?.name ?? 'Ungrouped'}
+            />
           )}
-          {nav === 'sql' && (
-            <SqlView api={api} datasetId={dataset?.id ?? 'ungrouped'} datasetName={dataset?.name ?? 'Ungrouped'} />
+
+          {nav === 'meaning' && (
+            <>
+              <div className="subnav">
+                <button
+                  data-meaning="dictionary"
+                  className={meaningTab === 'dictionary' ? 'on' : ''}
+                  onClick={() => setMeaningTab('dictionary')}
+                >
+                  Dictionary
+                </button>
+                <button
+                  data-meaning="learn"
+                  className={meaningTab === 'learn' ? 'on' : ''}
+                  onClick={() => setMeaningTab('learn')}
+                >
+                  How it works
+                </button>
+              </div>
+              {meaningTab === 'dictionary' ? (
+                <Dictionary
+                  api={api}
+                  sources={loaded.sources.filter((s) => s.datasetId === activeId)}
+                />
+              ) : (
+                <Learn api={api} />
+              )}
+            </>
           )}
-          {nav === 'models' && <Models api={api} datasetId={dataset?.id ?? 'ungrouped'} />}
-          {nav === 'dictionary' && <Dictionary api={api} sources={loaded.sources} />}
-          {nav === 'serve' && <Serve api={api} />}
-          {nav === 'environments' && <Environments api={api} datasets={loaded.datasets} />}
-          {nav === 'learn' && <Learn api={api} />}
-          {nav === 'shape' && (
+
+          {nav === 'activity' && <Activity api={api} />}
+          {nav === 'changes' && <Edit api={api} datasets={loaded.datasets} onChanged={() => void refresh()} />}
+
+          {nav === 'data' && (
+            <div className="subnav">
+              <button
+                data-data="sources"
+                className={dataTab === 'sources' ? 'on' : ''}
+                onClick={() => setDataTab('sources')}
+              >
+                Sources
+              </button>
+              <button
+                data-data="shape"
+                className={dataTab === 'shape' ? 'on' : ''}
+                onClick={() => setDataTab('shape')}
+              >
+                Shape &amp; export
+              </button>
+            </div>
+          )}
+
+          {nav === 'data' && dataTab === 'shape' && (
             <Shape api={api} datasets={loaded.datasets} sources={loaded.sources} onChanged={() => void refresh()} />
           )}
-          {nav === 'edit' && <Edit api={api} datasets={loaded.datasets} onChanged={() => void refresh()} />}
 
-          {nav === 'workspace' && (loaded.sources.length === 0 ? (
+          {nav === 'data' && dataTab === 'sources' && (loaded.sources.length === 0 ? (
             <div className="empty">
               <h2>No sources connected</h2>
               <p>
@@ -312,8 +407,8 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                   </div>
                 )}
                 {loaded.datasets.map((d) => (
-                  <div key={d.id} className="dsgroup">
-                    <div className="dsh">
+                  <div key={d.id} className={`dsgroup ${d.id === activeId ? 'on' : ''}`}>
+                    <div className="dsh" data-pick-dataset={d.id} onClick={() => setDatasetId(d.id)}>
                       <span className="dsn">{d.name}</span>
                       <span className="dsc">
                         {loaded.sources.filter((s) => s.datasetId === d.id).length}
@@ -383,7 +478,9 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                     <div className="dsbn">{dataset?.name ?? 'Ungrouped'}</div>
                     <div className="dsbd">{dataset?.description ?? ''}</div>
                   </div>
-                  <span className="scope">single-source only</span>
+                  <span className="scope">
+                    {loaded.sources.filter((s) => s.datasetId === activeId).length} source(s) in scope
+                  </span>
                 </div>
 
                 {selected === null ? (
@@ -401,6 +498,16 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           ))}
         </div>
       </div>
+
+      {settingsOpen && (
+        <Settings
+          api={api}
+          datasets={loaded.datasets}
+          datasetId={activeId}
+          onClose={() => setSettingsOpen(false)}
+          onChanged={() => void refresh()}
+        />
+      )}
     </div>
   );
 }

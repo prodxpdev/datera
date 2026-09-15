@@ -1,4 +1,5 @@
 import type {
+  SchemaGraph,
   AddSourceRequest,
   AskResult,
   BuildResult,
@@ -73,6 +74,7 @@ export interface DateraApi {
   getDictionary(sourceId: string): Promise<SourceDictionary>;
   confirmColumn(sourceId: string, definition: ColumnDefinition): Promise<void>;
   confirmColumns(sourceId: string, definitions: readonly ColumnDefinition[]): Promise<void>;
+  schemaGraph(datasetId: string): Promise<SchemaGraph>;
   confirmEntity(sourceId: string, definition: EntityDefinition): Promise<void>;
   detectRelationships(datasetId: string): Promise<readonly RelationshipProposal[]>;
   confirmRelationship(datasetId: string, proposal: RelationshipProposal): Promise<AuthoredRelationship>;
@@ -161,6 +163,7 @@ export const IPC = {
   getDictionary: 'datera:getDictionary',
   confirmColumn: 'datera:confirmColumn',
   confirmColumns: 'datera:confirmColumns',
+  schemaGraph: 'datera:schemaGraph',
   confirmEntity: 'datera:confirmEntity',
   detectRelationships: 'datera:detectRelationships',
   confirmRelationship: 'datera:confirmRelationship',

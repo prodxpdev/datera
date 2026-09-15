@@ -102,7 +102,7 @@ describe('P1-18/P1-19 Electron shell', () => {
     // the main process, so an accidental addition should fail here and be looked at.
     expect([...probe.bridgeKeys].sort()).toEqual(
       [
-        'addSource', 'ask', 'buildEmbeddings', 'callTool', 'clearApiKey', 'confirmColumn',
+        'addSource', 'ask', 'buildEmbeddings', 'callTool', 'clearApiKey', 'confirmColumn', 'confirmColumns', 'schemaGraph',
         'confirmEntity', 'confirmRelationship', 'connectConfig', 'createDataset',
         'detectRelationships', 'draftDictionary', 'embeddingStatus', 'engineInfo',
         'explainTouched', 'getDictionary', 'getSchema', 'getTracePayloadCapture',

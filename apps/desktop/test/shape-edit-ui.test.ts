@@ -51,7 +51,8 @@ describe('Shape and Edit', () => {
 
   describe('Shape — copy-on-write, normalize, versions (Phase 5)', () => {
     it('offers a way to derive a working copy', async () => {
-      await page.click('[data-nav="shape"]');
+      await page.click('[data-nav="data"]');
+      await page.click('[data-data="shape"]');
       await page.waitForSelector('.shape');
 
       expect(await page.textContent('.shape')).toMatch(/working copy|derive/i);
@@ -140,7 +141,7 @@ describe('Shape and Edit', () => {
 
   describe('Edit — the write gate (Phase 6)', () => {
     it('shows writes as off, and says why', async () => {
-      await page.click('[data-nav="edit"]');
+      await page.click('[data-nav="changes"]');
       await page.waitForSelector('.edit');
 
       const text = await page.textContent('.edit');
