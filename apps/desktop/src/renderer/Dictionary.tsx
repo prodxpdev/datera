@@ -6,11 +6,14 @@ import type { DateraApi } from '../shared/contract.js';
  * The Dictionary view (spec §4).
  *
  * The interaction is the invariant: Datera proposes, and nothing takes effect until a
- * human confirms it (§1.3). So drafting fills the form but changes nothing, each row
- * shows its own state, and confirming is always a deliberate per-row act. A single
- * "accept all" button would technically satisfy the letter of propose-then-confirm while
- * losing the point of it — there is a "confirm all" here, but it is secondary and the row
- * states stay visible either way.
+ * human confirms it (§1.3). So drafting fills the form but changes nothing, and each row
+ * shows its own state.
+ *
+ * What §1.3 does *not* require is that ratification happen one row at a time. It used to,
+ * and worse: reloading after each confirm cleared the draft, so accepting twelve columns
+ * meant drafting twelve times. The draft now survives a confirm, and "Confirm all" accepts
+ * the batch a human has just read — reviewing a set and saying yes to it is ratification;
+ * re-deriving the set after every click was only a bug.
  */
 export function Dictionary({
   api,
@@ -24,11 +27,19 @@ export function Dictionary({
   const [draft, setDraft] = useState<SourceDictionary | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Re-read what is stored. Deliberately leaves the draft alone: confirming one row must
+   * not discard the proposals for the others.
+   */
   const load = useCallback(async () => {
     if (selectedId === null) return;
     setDictionary(await api.getDictionary(selectedId));
-    setDraft(null);
   }, [api, selectedId]);
+
+  // Switching sources *does* drop the draft — it belongs to the source it was drafted from.
+  useEffect(() => {
+    setDraft(null);
+  }, [selectedId]);
 
   useEffect(() => {
     void load();
@@ -49,6 +60,23 @@ export function Dictionary({
       if (selectedId === null) return;
       await api.confirmColumn(selectedId, { ...definition, state: 'confirmed' });
       await load();
+    },
+    [api, selectedId, load],
+  );
+
+  const confirmAll = useCallback(
+    async (definitions: readonly ColumnDefinition[]) => {
+      if (selectedId === null) return;
+      setBusy(true);
+      try {
+        await api.confirmColumns(
+          selectedId,
+          definitions.map((d) => ({ ...d, state: 'confirmed' as const })),
+        );
+        await load();
+      } finally {
+        setBusy(false);
+      }
     },
     [api, selectedId, load],
   );
@@ -77,6 +105,9 @@ export function Dictionary({
 
   const entity = draft !== null && dictionary.entity.state === 'undefined' ? draft.entity : dictionary.entity;
 
+  // Rows that have something to accept: a meaning, and no confirmation yet.
+  const pending = rows.filter((r) => r.state !== 'confirmed' && r.meaning.length > 0);
+
   return (
     <>
       <div className="dcpick">
@@ -95,10 +126,22 @@ export function Dictionary({
         </button>
       </div>
 
-      {draft !== null && (
+      {pending.length > 0 && (
         <div className="softflag">
-          Drafted from column names, types and the values actually present. <b>Nothing is saved yet</b> —
-          edit what is wrong, then confirm each row you agree with.
+          {draft !== null && (
+            <>Drafted from column names, types and the values actually present. </>
+          )}
+          <b>Nothing is saved yet</b> — {pending.length} column{pending.length === 1 ? '' : 's'} awaiting
+          your agreement. Read them, then confirm the ones you agree with, or accept the batch.
+          <button
+            className="btn p"
+            style={{ marginLeft: 12 }}
+            data-confirm-all
+            disabled={busy}
+            onClick={() => void confirmAll(pending)}
+          >
+            Confirm all {pending.length}
+          </button>
         </div>
       )}
 
@@ -164,7 +207,7 @@ export function Dictionary({
                 </td>
                 <td className="rowacts">
                   {row.state !== 'confirmed' && row.meaning.length > 0 && (
-                    <button className="btn" onClick={() => void confirm(row)}>Confirm</button>
+                    <button className="btn" data-confirm-row onClick={() => void confirm(row)}>Confirm</button>
                   )}
                   <button
                     className="btn"

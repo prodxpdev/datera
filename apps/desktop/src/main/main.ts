@@ -135,6 +135,7 @@ function registerHandlers(): void {
   handle(IPC.draftDictionary, async (sourceId: string) => core().draftDictionary(sourceId));
   handle(IPC.getDictionary, async (sourceId: string) => core().getDictionary(sourceId));
   handle(IPC.confirmColumn, async (sourceId: string, d: never) => core().confirmColumn(sourceId, d));
+  handle(IPC.confirmColumns, async (sourceId: string, d: never) => core().confirmColumns(sourceId, d));
   handle(IPC.confirmEntity, async (sourceId: string, d: never) => core().confirmEntity(sourceId, d));
   handle(IPC.detectRelationships, async (datasetId: string) => core().detectRelationships(datasetId));
   handle(IPC.confirmRelationship, async (datasetId: string, p: never) => core().confirmRelationship(datasetId, p));

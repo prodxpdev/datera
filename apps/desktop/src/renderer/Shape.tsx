@@ -277,9 +277,14 @@ export function Shape({
               onClick={() =>
                 void run('Export', async () => {
                   const directory = await api.pickDirectory();
-                  if (directory === null) return null;
+                  // Cancelling used to do nothing at all, which is indistinguishable from
+                  // the export having failed silently. Saying so costs one line.
+                  if (directory === null) return 'Export cancelled — no folder chosen.';
+
                   const result = await api.exportDataset(dataset.id, directory, { format });
-                  return `Exported ${result.files.length} file(s) to ${directory}.`;
+                  return `Exported ${result.files.length} file(s) to ${directory}: ${result.manifest.tables
+                    .map((t) => t.file)
+                    .join(', ')}.`;
                 })
               }
             >
@@ -292,9 +297,10 @@ export function Shape({
             onClick={() =>
               void run('Import', async () => {
                 const directory = await api.pickDirectory();
-                if (directory === null) return null;
+                if (directory === null) return 'Import cancelled — no folder chosen.';
+
                 const result = await api.importDataset(directory);
-                return `Imported ${result.tables.length} table(s).`;
+                return `Imported ${result.tables.length} table(s): ${result.tables.join(', ')}.`;
               })
             }
           >

@@ -1144,6 +1144,20 @@ export class Datera {
     await this.catalog.upsertColumnDefinition(sourceId, definition);
   }
 
+  /**
+   * Ratify several columns in one act.
+   *
+   * Still propose-then-confirm — a human read the batch and said yes to it. What this
+   * removes is the per-click reload that used to discard the rest of the draft, which
+   * turned ratifying twelve columns into twelve drafting runs.
+   */
+  async confirmColumns(sourceId: string, definitions: readonly ColumnDefinition[]): Promise<void> {
+    await this.getSource(sourceId);
+    for (const definition of definitions) {
+      await this.catalog.upsertColumnDefinition(sourceId, definition);
+    }
+  }
+
   async confirmEntity(sourceId: string, definition: EntityDefinition): Promise<void> {
     await this.getSource(sourceId);
     await this.catalog.upsertEntityDefinition(sourceId, definition);

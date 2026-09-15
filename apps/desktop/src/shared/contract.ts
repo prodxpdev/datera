@@ -72,6 +72,7 @@ export interface DateraApi {
   draftDictionary(sourceId: string): Promise<SourceDictionary>;
   getDictionary(sourceId: string): Promise<SourceDictionary>;
   confirmColumn(sourceId: string, definition: ColumnDefinition): Promise<void>;
+  confirmColumns(sourceId: string, definitions: readonly ColumnDefinition[]): Promise<void>;
   confirmEntity(sourceId: string, definition: EntityDefinition): Promise<void>;
   detectRelationships(datasetId: string): Promise<readonly RelationshipProposal[]>;
   confirmRelationship(datasetId: string, proposal: RelationshipProposal): Promise<AuthoredRelationship>;
@@ -159,6 +160,7 @@ export const IPC = {
   draftDictionary: 'datera:draftDictionary',
   getDictionary: 'datera:getDictionary',
   confirmColumn: 'datera:confirmColumn',
+  confirmColumns: 'datera:confirmColumns',
   confirmEntity: 'datera:confirmEntity',
   detectRelationships: 'datera:detectRelationships',
   confirmRelationship: 'datera:confirmRelationship',
