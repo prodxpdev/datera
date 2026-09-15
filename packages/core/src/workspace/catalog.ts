@@ -1,3 +1,4 @@
+import { asDateraError, DateraError } from '../errors.js';
 import type { Engine } from '../engine/engine.js';
 import type { Source, SourceDetection, SourceKind } from '../sources/types.js';
 import type { Dataset } from '../datasets/types.js';
@@ -30,17 +31,13 @@ export class Catalog {
         kind VARCHAR NOT NULL DEFAULT 'connected',
         derived_from VARCHAR
       )`);
-    // For workspaces created before Phase 5, whose datasets table predates these columns.
-    // DuckDB has no ADD COLUMN IF NOT EXISTS, so a failure here means "already present".
-    for (const [column, type] of [['kind', "VARCHAR NOT NULL DEFAULT 'connected'"], ['derived_from', 'VARCHAR']]) {
-      try {
-        await this.engine.executeInternal(
-          `ALTER TABLE ${CATALOG_SCHEMA}.datasets ADD COLUMN ${column} ${type}`,
-        );
-      } catch {
-        // Already present. DuckDB has no ADD COLUMN IF NOT EXISTS.
-      }
-    }
+    // Workspaces created before Phase 5 have a datasets table without these columns.
+    await this.addMissingColumns('datasets', [
+      // No NOT NULL: DuckDB rejects `ADD COLUMN ... NOT NULL` outright ("Adding columns
+      // with constraints not yet supported"). Existing rows are backfilled below instead.
+      { name: 'kind', type: "VARCHAR DEFAULT 'connected'", backfill: "'connected'" },
+      { name: 'derived_from', type: 'VARCHAR' },
+    ]);
     await this.engine.executeInternal(`
       CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.sources (
         id VARCHAR PRIMARY KEY,
@@ -87,6 +84,67 @@ export class Catalog {
         source_id VARCHAR PRIMARY KEY,
         definition_json VARCHAR NOT NULL
       )`);
+  }
+
+  /**
+   * Add columns a workspace does not have yet.
+   *
+   * Two rules, both learned from a bug that reached a user and stopped Datera opening at
+   * all on any workspace older than the release that introduced these columns:
+   *
+   *  1. **Ask what exists, do not guess.** The previous version issued an ALTER and caught
+   *     the error on the assumption that a failure meant "already present". DuckDB was
+   *     actually rejecting the statement for an unrelated reason, so the column was never
+   *     added and the next SELECT failed with an incomprehensible binder error.
+   *  2. **Never swallow a failure.** A migration that cannot do its job says so at startup,
+   *     where the message can name the workspace — not later, from a query that has no idea
+   *     why its column is missing.
+   */
+  private async addMissingColumns(
+    table: string,
+    columns: readonly { name: string; type: string; backfill?: string }[],
+  ): Promise<void> {
+    const existing = await this.engine.executeInternal(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = ? AND table_name = ?`,
+      [CATALOG_SCHEMA, table],
+    );
+    const present = new Set(existing.rows.map((row) => String(row[0]).toLowerCase()));
+
+    // An empty result means the table is not a real table — a view, say — in which case
+    // ALTER cannot work and pretending otherwise just defers the failure.
+    if (present.size === 0) {
+      throw new DateraError(
+        'WORKSPACE_FORMAT_UNSUPPORTED',
+        `This workspace could not be upgraded: ${CATALOG_SCHEMA}.${table} is missing or is not a table. ` +
+          `Datera will not continue with a half-migrated catalog.`,
+        { table },
+      );
+    }
+
+    for (const column of columns) {
+      if (present.has(column.name.toLowerCase())) continue;
+
+      try {
+        await this.engine.executeInternal(
+          `ALTER TABLE ${CATALOG_SCHEMA}.${table} ADD COLUMN ${column.name} ${column.type}`,
+        );
+      } catch (e) {
+        throw asDateraError(
+          e,
+          'WORKSPACE_FORMAT_UNSUPPORTED',
+          `This workspace could not be upgraded: adding "${column.name}" to ${table} failed`,
+          { table, column: column.name },
+        );
+      }
+
+      // DEFAULT applies to new rows; rows already in the table keep NULL without this.
+      if (column.backfill !== undefined) {
+        await this.engine.executeInternal(
+          `UPDATE ${CATALOG_SCHEMA}.${table} SET ${column.name} = ${column.backfill} WHERE ${column.name} IS NULL`,
+        );
+      }
+    }
   }
 
   async upsertColumnDefinition(sourceId: string, definition: ColumnDefinition): Promise<void> {
