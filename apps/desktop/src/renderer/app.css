@@ -208,3 +208,35 @@
 .caveat { border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; margin: 18px 0 12px; }
 .caveat b { display: block; margin-bottom: 3px; }
 .mono { font-family: var(--mono); }
+
+/* ------------------------------------------------------------- dictionary */
+.dcpick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; min-width: 0; }
+.dcsrc { background: var(--card); border: 1px solid var(--line2); border-radius: 7px; padding: 4px 10px; font-size: 12px; color: var(--ink2); }
+.dcsrc.on { background: var(--indigo-bg); border-color: var(--indigo-line); color: var(--indigo); font-weight: 500; }
+
+.entcard { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border: 1px solid var(--line); background: var(--card); border-radius: 11px; padding: 13px 15px; margin-bottom: 14px; box-shadow: var(--sh); }
+.entn { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.entd { font-size: 12.5px; color: var(--ink2); margin-top: 3px; overflow-wrap: anywhere; }
+.entmeta { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--ink3); flex-wrap: wrap; }
+
+.mst { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; border-radius: 20px; padding: 2px 8px; }
+.mst.ok { background: var(--green-bg); color: var(--green); }
+.mst.sg { background: var(--amber-bg); color: var(--amber); }
+.mst.un { background: #f1f2f6; color: var(--ink3); }
+
+.dicttbl { border: 1px solid var(--line); border-radius: 10px; overflow: auto; background: var(--card); max-width: 100%; }
+.dicttbl table { border-collapse: collapse; min-width: 100%; width: max-content; font-size: 12.5px; }
+.dicttbl th { text-align: left; background: #f6f7f9; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--ink2); padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.dicttbl td { padding: 8px 10px; border-bottom: 1px solid #f1f2f6; vertical-align: top; }
+.dicttbl td.cn { font-family: var(--mono); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.dicttbl tr.hiddenrow { background: #fbfbfc; opacity: .7; }
+.dicttbl .ph { color: var(--ink3); font-style: italic; }
+.alias { display: inline-block; font-family: var(--mono); font-size: 10px; background: var(--indigo-bg); color: var(--indigo); border-radius: 4px; padding: 1px 6px; margin: 0 3px 3px 0; }
+.mono2 { font-family: var(--mono); font-size: 11px; color: var(--ink2); }
+.enums { margin-top: 5px; display: flex; flex-direction: column; gap: 2px; }
+.enum { font-size: 11.5px; color: var(--ink3); }
+.enum b { font-family: var(--mono); color: var(--ink2); }
+.rowacts { display: flex; gap: 5px; flex-wrap: wrap; }
+.rowacts .btn { padding: 3px 8px; font-size: 11px; }
+.dcpay { margin-top: 14px; border: 1px solid var(--indigo-line); background: var(--indigo-bg); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--ink2); }
+.dcpay b { color: var(--ink); }

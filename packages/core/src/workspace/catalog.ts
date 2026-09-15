@@ -2,6 +2,7 @@ import type { Engine } from '../engine/engine.js';
 import type { Source, SourceDetection, SourceKind } from '../sources/types.js';
 import type { Dataset } from '../datasets/types.js';
 import type { AuthoredRelationship } from '../datasets/authoring.js';
+import type { ColumnDefinition, EntityDefinition } from '../dictionary/types.js';
 
 export const CATALOG_SCHEMA = '_datera';
 
@@ -58,6 +59,53 @@ export class Catalog {
         key VARCHAR PRIMARY KEY,
         value VARCHAR NOT NULL
       )`);
+    // The dictionary (§4). Stored as JSON per item rather than as columns: definitions
+    // grew twice during Phase 3 alone, and a migration per field is not worth it.
+    await this.engine.executeInternal(`
+      CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.dictionary_columns (
+        source_id VARCHAR NOT NULL,
+        column_name VARCHAR NOT NULL,
+        definition_json VARCHAR NOT NULL,
+        PRIMARY KEY (source_id, column_name)
+      )`);
+    await this.engine.executeInternal(`
+      CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.dictionary_entities (
+        source_id VARCHAR PRIMARY KEY,
+        definition_json VARCHAR NOT NULL
+      )`);
+  }
+
+  async upsertColumnDefinition(sourceId: string, definition: ColumnDefinition): Promise<void> {
+    await this.engine.executeInternal(
+      `INSERT OR REPLACE INTO ${CATALOG_SCHEMA}.dictionary_columns (source_id, column_name, definition_json)
+       VALUES (?, ?, ?)`,
+      [sourceId, definition.column, JSON.stringify(definition)],
+    );
+  }
+
+  async listColumnDefinitions(sourceId: string): Promise<readonly ColumnDefinition[]> {
+    const result = await this.engine.executeInternal(
+      `SELECT definition_json FROM ${CATALOG_SCHEMA}.dictionary_columns WHERE source_id = ?`,
+      [sourceId],
+    );
+    return result.rows.map((row) => JSON.parse(String(row[0])) as ColumnDefinition);
+  }
+
+  async upsertEntityDefinition(sourceId: string, definition: EntityDefinition): Promise<void> {
+    await this.engine.executeInternal(
+      `INSERT OR REPLACE INTO ${CATALOG_SCHEMA}.dictionary_entities (source_id, definition_json)
+       VALUES (?, ?)`,
+      [sourceId, JSON.stringify(definition)],
+    );
+  }
+
+  async getEntityDefinition(sourceId: string): Promise<EntityDefinition | null> {
+    const result = await this.engine.executeInternal(
+      `SELECT definition_json FROM ${CATALOG_SCHEMA}.dictionary_entities WHERE source_id = ?`,
+      [sourceId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : (JSON.parse(String(row[0])) as EntityDefinition);
   }
 
   /**

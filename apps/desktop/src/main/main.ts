@@ -129,6 +129,17 @@ function registerHandlers(): void {
   handle(IPC.setApiKey, async (provider: string, key: string) => core().setApiKey(provider, key));
   handle(IPC.hasApiKey, async (provider: string) => core().hasApiKey(provider));
   handle(IPC.clearApiKey, async (provider: string) => core().clearApiKey(provider));
+  handle(IPC.draftDictionary, async (sourceId: string) => core().draftDictionary(sourceId));
+  handle(IPC.getDictionary, async (sourceId: string) => core().getDictionary(sourceId));
+  handle(IPC.confirmColumn, async (sourceId: string, d: never) => core().confirmColumn(sourceId, d));
+  handle(IPC.confirmEntity, async (sourceId: string, d: never) => core().confirmEntity(sourceId, d));
+  handle(IPC.detectRelationships, async (datasetId: string) => core().detectRelationships(datasetId));
+  handle(IPC.confirmRelationship, async (datasetId: string, p: never) => core().confirmRelationship(datasetId, p));
+  handle(IPC.listRelationships, async (datasetId?: string) => core().listRelationships(datasetId));
+  handle(IPC.createDataset, async (input: never) => core().createDataset(input));
+  handle(IPC.explainTouched, async (datasetId: string, sql: string, rows?: number) =>
+    core().explainTouched(datasetId, sql, rows ?? 0),
+  );
 
   handle(IPC.pickFiles, async () => {
     if (window === null) return [];

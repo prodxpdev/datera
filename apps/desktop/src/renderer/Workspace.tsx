@@ -10,6 +10,7 @@ import type { DateraApi } from '../shared/contract.js';
 import { Ask } from './Ask.js';
 import { SqlView } from './SqlView.js';
 import { Models } from './Models.js';
+import { Dictionary } from './Dictionary.js';
 
 /**
  * P1-17 — the Workspace view.
@@ -48,7 +49,7 @@ const NAV: readonly NavItem[] = [
   { id: 'ask', icon: '◇', label: 'Ask', enabled: true, title: 'Ask', subtitle: 'natural language, with the receipts' },
   { id: 'sql', icon: '›_', label: 'SQL', enabled: true, title: 'SQL', subtitle: 'write DuckDB SQL, read-only' },
   { id: 'models', icon: '◈', label: 'Models', enabled: true, title: 'Models', subtitle: 'local by default, your key if you want one' },
-  { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: false, title: 'Dictionary', subtitle: 'Phase 3' },
+  { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: true, title: 'Dictionary', subtitle: 'what your columns mean — the layer NL and search use' },
   { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: false, title: 'Serve', subtitle: 'Phase 7' },
   { id: 'environments', icon: '☁', label: 'Environments', enabled: false, title: 'Environments', subtitle: 'Phase 8' },
   { id: 'learn', icon: '◎', label: 'Learn', enabled: false, title: 'Learn', subtitle: 'Phase 9' },
@@ -214,6 +215,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
             <SqlView api={api} datasetId={dataset?.id ?? 'ungrouped'} datasetName={dataset?.name ?? 'Ungrouped'} />
           )}
           {nav === 'models' && <Models api={api} />}
+          {nav === 'dictionary' && <Dictionary api={api} sources={loaded.sources} />}
 
           {nav === 'workspace' && (loaded.sources.length === 0 ? (
             <div className="empty">

@@ -78,6 +78,16 @@ export type {
 } from './datasets/authoring.js';
 export type { InferenceNote, InferenceVerdict } from './schema/inference.js';
 
+// -------------------------------------------------------- dictionary (§4)
+export type {
+  SourceDictionary, ColumnDefinition, EntityDefinition, DefinitionState,
+  ColumnRole, Sensitivity, EnumValueMeaning,
+} from './dictionary/types.js';
+export { confirmedOnly, UNDEFINED_ENTITY } from './dictionary/types.js';
+export { draftDictionary } from './dictionary/draft.js';
+export { detectRelationships } from './datasets/detect-relationships.js';
+export type { RelationshipProposal } from './datasets/detect-relationships.js';
+
 export {
   workspacePaths,
   WORKSPACE_DATABASE,
@@ -108,5 +118,9 @@ export type { AskResult, Citations } from './query/ask.js';
 export type { Trace, TraceStage, StageKind, Route } from './query/trace.js';
 export { buildSchemaContext, summariseSchemas, SYSTEM_PROMPT } from './query/context.js';
 export { extractSql } from './query/sql-extract.js';
+export { assertWithinDataset, extractTableReferences } from './query/scope.js';
+export { summariseTouched } from './query/touched.js';
+export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
+export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';
 export { apiKeySecretName } from './datera.js';

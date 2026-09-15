@@ -1,8 +1,11 @@
 import { DateraError } from '../errors.js';
 import type { Engine } from '../engine/engine.js';
 import { assertReadOnlySql } from '../engine/read-only.js';
+import { assertWithinDataset } from './scope.js';
 import { describeModel, type ChatModel } from '../models/types.js';
 import type { SourceSchema } from '../schema/introspect.js';
+import type { SourceDictionary } from '../dictionary/types.js';
+import type { AuthoredRelationship } from '../datasets/authoring.js';
 import { buildSchemaContext, buildUserPrompt, summariseSchemas, SYSTEM_PROMPT } from './context.js';
 import { extractSql } from './sql-extract.js';
 import { TraceBuilder, type Route, type Trace } from './trace.js';
@@ -35,8 +38,14 @@ export interface AskOptions {
   readonly engine: Engine;
   readonly model: ChatModel | null;
   readonly datasetId: string;
+  readonly datasetName: string;
   readonly schemaName: string;
+  /** Schema name → dataset name, so a refusal can say which dataset was reached for. */
+  readonly schemaToDataset: ReadonlyMap<string, string>;
   readonly schemas: readonly SourceSchema[];
+  /** Confirmed definitions only — filtering happens in buildSchemaContext (§1.3). */
+  readonly dictionaries?: readonly SourceDictionary[] | undefined;
+  readonly relationships?: readonly AuthoredRelationship[] | undefined;
   readonly question: string;
   readonly traceId: string;
   readonly now: () => Date;
@@ -119,11 +128,15 @@ export async function ask(options: AskOptions): Promise<AskResult> {
   }
 
   // ---- schema ------------------------------------------------------------
-  const schemaContext = buildSchemaContext(options.schemas);
+  const contextOptions = {
+    dictionaries: options.dictionaries,
+    relationships: options.relationships,
+  };
+  const schemaContext = buildSchemaContext(options.schemas, contextOptions);
   trace.add({
     kind: 'schema',
-    label: 'Schema given to the model',
-    schemaSummary: summariseSchemas(options.schemas),
+    label: 'Schema and definitions given to the model',
+    schemaSummary: summariseSchemas(options.schemas, contextOptions),
     detail: schemaContext,
   });
 
@@ -194,10 +207,29 @@ export async function ask(options: AskOptions): Promise<AskResult> {
     throw e;
   }
 
+  // The dataset boundary applies to generated SQL exactly as it does to hand-written SQL.
+  // A model is not trusted more than a user — and a model that has only been shown one
+  // dataset's schema should never produce this, which makes it worth refusing loudly.
+  try {
+    await assertWithinDataset(
+      engineConnection(options.engine),
+      sql,
+      options.schemaName,
+      options.datasetName,
+      options.schemaToDataset,
+    );
+  } catch (e) {
+    if (DateraError.is(e, 'CROSS_DATASET_ACCESS')) {
+      trace.add({ kind: 'guard', label: 'Refused — dataset boundary', detail: e.message });
+      return decline(`Refused: ${e.message}`);
+    }
+    throw e;
+  }
+
   trace.add({
     kind: 'guard',
     label: 'Read-only check',
-    detail: 'Passed — a single read-only SELECT, verified by DuckDB’s parser before running.',
+    detail: 'Passed — a single read-only SELECT within this dataset, verified by DuckDB’s parser before running.',
   });
 
   // ---- execute -----------------------------------------------------------

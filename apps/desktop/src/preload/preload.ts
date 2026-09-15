@@ -32,6 +32,15 @@ const IPC = {
   setApiKey: 'datera:setApiKey',
   hasApiKey: 'datera:hasApiKey',
   clearApiKey: 'datera:clearApiKey',
+  draftDictionary: 'datera:draftDictionary',
+  getDictionary: 'datera:getDictionary',
+  confirmColumn: 'datera:confirmColumn',
+  confirmEntity: 'datera:confirmEntity',
+  detectRelationships: 'datera:detectRelationships',
+  confirmRelationship: 'datera:confirmRelationship',
+  listRelationships: 'datera:listRelationships',
+  createDataset: 'datera:createDataset',
+  explainTouched: 'datera:explainTouched',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -53,4 +62,13 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   setApiKey: (provider: string, key: string) => call(IPC.setApiKey, provider, key),
   hasApiKey: (provider: string) => call(IPC.hasApiKey, provider),
   clearApiKey: (provider: string) => call(IPC.clearApiKey, provider),
+  draftDictionary: (sourceId: string) => call(IPC.draftDictionary, sourceId),
+  getDictionary: (sourceId: string) => call(IPC.getDictionary, sourceId),
+  confirmColumn: (sourceId: string, d: unknown) => call(IPC.confirmColumn, sourceId, d),
+  confirmEntity: (sourceId: string, d: unknown) => call(IPC.confirmEntity, sourceId, d),
+  detectRelationships: (datasetId: string) => call(IPC.detectRelationships, datasetId),
+  confirmRelationship: (datasetId: string, p: unknown) => call(IPC.confirmRelationship, datasetId, p),
+  listRelationships: (datasetId?: string) => call(IPC.listRelationships, datasetId),
+  createDataset: (input: unknown) => call(IPC.createDataset, input),
+  explainTouched: (datasetId: string, sql: string, rows?: number) => call(IPC.explainTouched, datasetId, sql, rows),
 });

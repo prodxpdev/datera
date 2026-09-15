@@ -1,8 +1,14 @@
 import type {
   AddSourceRequest,
   AskResult,
+  AuthoredRelationship,
+  ColumnDefinition,
+  EntityDefinition,
   ModelCatalogue,
   ModelDescriptor,
+  RelationshipProposal,
+  SourceDictionary,
+  TouchedSummary,
   Dataset,
   EngineInfo,
   PreviewOptions,
@@ -41,6 +47,17 @@ export interface DateraApi {
   setApiKey(provider: string, apiKey: string): Promise<void>;
   hasApiKey(provider: string): Promise<boolean>;
   clearApiKey(provider: string): Promise<void>;
+
+  // ---- Phase 3 -----------------------------------------------------------
+  draftDictionary(sourceId: string): Promise<SourceDictionary>;
+  getDictionary(sourceId: string): Promise<SourceDictionary>;
+  confirmColumn(sourceId: string, definition: ColumnDefinition): Promise<void>;
+  confirmEntity(sourceId: string, definition: EntityDefinition): Promise<void>;
+  detectRelationships(datasetId: string): Promise<readonly RelationshipProposal[]>;
+  confirmRelationship(datasetId: string, proposal: RelationshipProposal): Promise<AuthoredRelationship>;
+  listRelationships(datasetId?: string): Promise<readonly AuthoredRelationship[]>;
+  createDataset(input: { id?: string; name: string; description?: string }): Promise<unknown>;
+  explainTouched(datasetId: string, sql: string, rowsReturned?: number): Promise<TouchedSummary>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -60,6 +77,15 @@ export const IPC = {
   setApiKey: 'datera:setApiKey',
   hasApiKey: 'datera:hasApiKey',
   clearApiKey: 'datera:clearApiKey',
+  draftDictionary: 'datera:draftDictionary',
+  getDictionary: 'datera:getDictionary',
+  confirmColumn: 'datera:confirmColumn',
+  confirmEntity: 'datera:confirmEntity',
+  detectRelationships: 'datera:detectRelationships',
+  confirmRelationship: 'datera:confirmRelationship',
+  listRelationships: 'datera:listRelationships',
+  createDataset: 'datera:createDataset',
+  explainTouched: 'datera:explainTouched',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

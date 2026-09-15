@@ -1,6 +1,7 @@
 import { DateraError } from './errors.js';
 import { Engine } from './engine/engine.js';
 import { assertExtensionLoaded } from './engine/extensions.js';
+import { assertReadOnlySql } from './engine/read-only.js';
 import { qualified, quoteIdent, slugifyIdent } from './engine/sql.js';
 import type { DuckDBDriverPort, ResultSet, StatementKind } from './ports/duckdb.js';
 import type { Ports } from './ports/index.js';
@@ -43,6 +44,19 @@ import {
 } from './sources/types.js';
 import { introspectSource, introspectRelation, type SourceSchema } from './schema/introspect.js';
 import { ask, type AskResult } from './query/ask.js';
+import { assertWithinDataset } from './query/scope.js';
+import { summariseTouched, type TouchedSummary } from './query/touched.js';
+import { draftDictionary } from './dictionary/draft.js';
+import {
+  UNDEFINED_ENTITY,
+  type ColumnDefinition,
+  type EntityDefinition,
+  type SourceDictionary,
+} from './dictionary/types.js';
+import {
+  detectRelationships as detectRelationshipsIn,
+  type RelationshipProposal,
+} from './datasets/detect-relationships.js';
 import { detectLocalRuntimes, type DetectedRuntime } from './models/detect.js';
 import { AnthropicChatModel } from './models/anthropic.js';
 import { OpenAICompatibleChatModel } from './models/openai-compatible.js';
@@ -573,6 +587,16 @@ export class Datera {
     const dataset = await this.getDataset(datasetId);
     await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
 
+    // Two independent checks, and the ORDER MATTERS. Read-only (§1.1) first, dataset
+    // boundary (§12.4) second.
+    //
+    // The scope check works by asking DuckDB to serialise the statement, which only
+    // succeeds for a SELECT. Run it first and every write comes back as "could not
+    // determine which tables this reads" — technically a refusal, but it would tell a
+    // user their DELETE was a scoping problem, which is both wrong and unhelpful.
+    await assertReadOnlySql(this.engine.classificationConnection(), sql);
+    await this.assertScoped(sql, dataset);
+
     const { resultSet, check, durationMs } = await this.engine.executeUserQuery(sql, () =>
       this.ports.clock.monotonicMs(),
     );
@@ -711,21 +735,145 @@ export class Datera {
       (s) => s.datasetId === datasetId && s.status.availability === 'available',
     );
     const schemas: SourceSchema[] = [];
+    const dictionaries: SourceDictionary[] = [];
     for (const source of sources) {
       schemas.push(await introspectSource(this.engine, source, dataset.schemaName));
+      dictionaries.push(await this.getDictionary(source.id));
     }
+
+    const relationships = (await this.catalog.listRelationships(datasetId)).filter(
+      (r) => r.state === 'confirmed',
+    );
 
     return ask({
       engine: this.engine,
       model,
       datasetId,
+      datasetName: dataset.name,
       schemaName: dataset.schemaName,
+      schemaToDataset: await this.schemaToDatasetName(),
       schemas,
+      dictionaries,
+      relationships,
       question,
       traceId: this.makeId(),
       now: () => this.ports.clock.now(),
       monotonicMs: () => this.ports.clock.monotonicMs(),
     });
+  }
+
+  /**
+   * What a statement physically touched (spec §5).
+   *
+   * Runs the same guards as a query, because explaining a statement means parsing it, and
+   * a statement that would be refused should not be explained as though it were fine.
+   */
+  async explainTouched(datasetId: string, sql: string, rowsReturned = 0): Promise<TouchedSummary> {
+    const dataset = await this.getDataset(datasetId);
+    await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
+    // Same order as query(): a write is a write, not a scoping problem.
+    await assertReadOnlySql(this.engine.classificationConnection(), sql);
+    await this.assertScoped(sql, dataset);
+
+    const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
+    return summariseTouched(this.engine, sql, schemas, rowsReturned);
+  }
+
+  // ------------------------------------------------------------ dictionary (§4)
+
+  /**
+   * Propose a dictionary for a source, computed from its data.
+   *
+   * Nothing is stored and nothing is confirmed — this is a proposal for a human to edit
+   * and ratify (§1.3). Call it as often as you like; it is deterministic.
+   */
+  async draftDictionary(sourceId: string): Promise<SourceDictionary> {
+    const source = await this.getSource(sourceId);
+    const dataset = await this.getDataset(source.datasetId);
+    const schema = await introspectSource(this.engine, source, dataset.schemaName);
+    return draftDictionary(this.engine, dataset.schemaName, schema);
+  }
+
+  /** What is actually stored — columns with no definition report as `undefined`. */
+  async getDictionary(sourceId: string): Promise<SourceDictionary> {
+    const source = await this.getSource(sourceId);
+    const dataset = await this.getDataset(source.datasetId);
+    const schema = await introspectSource(this.engine, source, dataset.schemaName);
+
+    const stored = new Map(
+      (await this.catalog.listColumnDefinitions(sourceId)).map((d) => [d.column, d]),
+    );
+
+    return {
+      sourceId,
+      sourceName: source.name,
+      entity: (await this.catalog.getEntityDefinition(sourceId)) ?? UNDEFINED_ENTITY,
+      columns: schema.columns.map(
+        (c) =>
+          stored.get(c.name) ?? {
+            column: c.name,
+            meaning: '',
+            aliases: [],
+            unit: '',
+            role: 'dimension' as const,
+            sensitivity: 'normal' as const,
+            state: 'undefined' as const,
+          },
+      ),
+    };
+  }
+
+  /** Ratify (or edit and ratify) a column definition. */
+  async confirmColumn(sourceId: string, definition: ColumnDefinition): Promise<void> {
+    await this.getSource(sourceId);
+    await this.catalog.upsertColumnDefinition(sourceId, definition);
+  }
+
+  async confirmEntity(sourceId: string, definition: EntityDefinition): Promise<void> {
+    await this.getSource(sourceId);
+    await this.catalog.upsertEntityDefinition(sourceId, definition);
+  }
+
+  // --------------------------------------------------- relationships (§3)
+
+  /**
+   * Propose links between sources in a dataset. Measured, and stores nothing (§1.3).
+   */
+  async detectRelationships(datasetId: string): Promise<readonly RelationshipProposal[]> {
+    const dataset = await this.getDataset(datasetId);
+    const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
+    return detectRelationshipsIn(this.engine, dataset.schemaName, datasetId, schemas);
+  }
+
+  /** Ratify a proposed link. Only confirmed links reach the model. */
+  async confirmRelationship(
+    datasetId: string,
+    proposal: Omit<AuthoredRelationship, 'id' | 'createdAt' | 'state'>,
+  ): Promise<AuthoredRelationship> {
+    await this.getDataset(datasetId);
+    const relationship: AuthoredRelationship = {
+      id: this.makeId(),
+      datasetId,
+      fromTable: proposal.fromTable,
+      fromColumn: proposal.fromColumn,
+      toTable: proposal.toTable,
+      toColumn: proposal.toColumn,
+      state: 'confirmed',
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+    await this.catalog.insertRelationship(relationship);
+    return relationship;
+  }
+
+  private async datasetSchemas(datasetId: string, schemaName: string): Promise<readonly SourceSchema[]> {
+    const sources = (await this.listSources()).filter(
+      (s) => s.datasetId === datasetId && s.status.availability === 'available',
+    );
+    const schemas: SourceSchema[] = [];
+    for (const source of sources) {
+      schemas.push(await introspectSource(this.engine, source, schemaName));
+    }
+    return schemas;
   }
 
   // --------------------------------------------------------------- authoring
@@ -866,6 +1014,35 @@ export class Datera {
       if (!taken.has(`${base}_${i}`)) return `${base}_${i}`;
     }
     throw new DateraError('DUPLICATE_NAME', `Could not find a free schema name for "${desired}"`, {});
+  }
+
+  /** Shared by the SQL path and the NL path: a model gets no more latitude than a user. */
+  private async assertScoped(sql: string, dataset: Dataset): Promise<void> {
+    const datasets = await this.catalog.listDatasets();
+    const schemaToDataset = new Map(datasets.map((d) => [d.schemaName, d.name]));
+
+    // Attachment aliases for databases connected *into this dataset*. They are this
+    // dataset's own sources under their real catalog names, not foreign schemas.
+    const ownAttachments = new Set(
+      (await this.catalog.listSources())
+        .filter((s) => s.datasetId === dataset.id && s.attachmentAlias !== undefined)
+        .map((s) => s.attachmentAlias as string),
+    );
+
+    await assertWithinDataset(
+      this.engine.classificationConnection(),
+      sql,
+      dataset.schemaName,
+      dataset.name,
+      schemaToDataset,
+      ownAttachments,
+    );
+  }
+
+  /** Dataset schema names, so the scope guard can name what a query reached for. */
+  private async schemaToDatasetName(): Promise<ReadonlyMap<string, string>> {
+    const datasets = await this.catalog.listDatasets();
+    return new Map(datasets.map((d) => [d.schemaName, d.name]));
   }
 
   async close(): Promise<void> {

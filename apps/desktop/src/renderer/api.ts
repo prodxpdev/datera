@@ -30,6 +30,9 @@ const METHODS = [
   'engineInfo', 'listDatasets', 'listSources', 'addSource', 'removeSource',
   'getSchema', 'preview', 'query', 'pickFiles',
   'ask', 'listModels', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
+  'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmEntity',
+  'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',
+  'explainTouched',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {
