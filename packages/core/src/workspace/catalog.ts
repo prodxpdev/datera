@@ -26,8 +26,21 @@ export class Catalog {
         description VARCHAR NOT NULL DEFAULT '',
         schema_name VARCHAR NOT NULL,
         is_default BOOLEAN NOT NULL DEFAULT false,
-        created_at VARCHAR NOT NULL
+        created_at VARCHAR NOT NULL,
+        kind VARCHAR NOT NULL DEFAULT 'connected',
+        derived_from VARCHAR
       )`);
+    // For workspaces created before Phase 5, whose datasets table predates these columns.
+    // DuckDB has no ADD COLUMN IF NOT EXISTS, so a failure here means "already present".
+    for (const [column, type] of [['kind', "VARCHAR NOT NULL DEFAULT 'connected'"], ['derived_from', 'VARCHAR']]) {
+      try {
+        await this.engine.executeInternal(
+          `ALTER TABLE ${CATALOG_SCHEMA}.datasets ADD COLUMN ${column} ${type}`,
+        );
+      } catch {
+        // Already present. DuckDB has no ADD COLUMN IF NOT EXISTS.
+      }
+    }
     await this.engine.executeInternal(`
       CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.sources (
         id VARCHAR PRIMARY KEY,
@@ -167,8 +180,9 @@ export class Catalog {
 
   async insertDataset(dataset: Dataset): Promise<void> {
     await this.engine.executeInternal(
-      `INSERT INTO ${CATALOG_SCHEMA}.datasets (id, name, description, schema_name, is_default, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${CATALOG_SCHEMA}.datasets
+         (id, name, description, schema_name, is_default, created_at, kind, derived_from)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         dataset.id,
         dataset.name,
@@ -176,13 +190,15 @@ export class Catalog {
         dataset.schemaName,
         dataset.isDefault,
         dataset.createdAt,
+        dataset.kind,
+        dataset.derivedFrom ?? null,
       ],
     );
   }
 
   async listDatasets(): Promise<readonly Dataset[]> {
     const result = await this.engine.executeInternal(
-      `SELECT id, name, description, schema_name, is_default, created_at
+      `SELECT id, name, description, schema_name, is_default, created_at, kind, derived_from
        FROM ${CATALOG_SCHEMA}.datasets ORDER BY is_default DESC, name`,
     );
     return result.rows.map((row) => ({
@@ -192,6 +208,8 @@ export class Catalog {
       schemaName: String(row[3]),
       isDefault: row[4] === true,
       createdAt: String(row[5]),
+      kind: (row[6] === null ? 'connected' : String(row[6])) as Dataset['kind'],
+      derivedFrom: row[7] === null ? undefined : String(row[7]),
     }));
   }
 

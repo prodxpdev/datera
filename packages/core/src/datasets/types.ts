@@ -8,6 +8,8 @@
  * "Ungrouped" — so that the boundary exists from the first commit rather than being
  * retrofitted in Phase 3 (decision D-04).
  */
+export type DatasetKind = 'connected' | 'derived' | 'imported';
+
 export interface Dataset {
   readonly id: string;
   readonly name: string;
@@ -16,6 +18,16 @@ export interface Dataset {
   readonly schemaName: string;
   /** The implicit dataset that new sources land in when none is named. */
   readonly isDefault: boolean;
+  /**
+   * How this dataset came to exist.
+   *
+   * `derived` is the copy-on-write result (§1.2) — real tables, safe to edit, with the
+   * original untouched. Recording it means the UI can say "this is a copy" rather than
+   * leaving a user to guess which of two similar datasets is the sacred one.
+   */
+  readonly kind: DatasetKind;
+  /** For a derived dataset: the dataset it was copied from. */
+  readonly derivedFrom?: string | undefined;
   readonly createdAt: string;
 }
 

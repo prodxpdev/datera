@@ -1,8 +1,8 @@
-import { DateraError } from './errors.js';
+import { asDateraError, DateraError } from './errors.js';
 import { Engine } from './engine/engine.js';
 import { assertExtensionLoaded } from './engine/extensions.js';
 import { assertReadOnlySql } from './engine/read-only.js';
-import { qualified, quoteIdent, slugifyIdent } from './engine/sql.js';
+import { qualified, quoteIdent, quoteLiteral, slugifyIdent } from './engine/sql.js';
 import type { DuckDBDriverPort, ResultSet, StatementKind } from './ports/duckdb.js';
 import type { Ports } from './ports/index.js';
 import { Catalog } from './workspace/catalog.js';
@@ -47,6 +47,20 @@ import { ask, type AskResult } from './query/ask.js';
 import { assertWithinDataset } from './query/scope.js';
 import { summariseTouched, type TouchedSummary } from './query/touched.js';
 import { buildEmbeddings as runBuildEmbeddings, type BuildResult } from './semantic/build.js';
+import {
+  diffVersions as diffVersionsIn, getVersion, listVersions as listVersionsIn,
+  migrateVersions, saveVersion as saveVersionIn, tablesIn,
+  type Version, type VersionDiff,
+} from './cow/versions.js';
+import {
+  exportDataset as runExportDataset, parseManifest, MANIFEST_FILE,
+  type ExportFormat, type ExportManifest, type ExportResult,
+} from './cow/export.js';
+import { joinPath } from './util/paths.js';
+import {
+  applyNormalization, proposeEnums, proposeNormalization,
+  type EnumProposal, type NormalizationProposal,
+} from './cow/normalize.js';
 import {
   countEmbedded, embeddedColumns, migrateEmbeddings, searchVectors, type SearchHit,
 } from './semantic/store.js';
@@ -182,6 +196,7 @@ export class Datera {
     const catalog = new Catalog(engine);
     await catalog.migrate();
     await migrateEmbeddings(engine);
+    await migrateVersions(engine);
 
     const datera = new Datera(
       engine,
@@ -242,6 +257,7 @@ export class Datera {
       description: DEFAULT_DATASET_DESCRIPTION,
       schemaName: DEFAULT_DATASET_SCHEMA,
       isDefault: true,
+      kind: 'connected',
       createdAt: this.ports.clock.now().toISOString(),
     };
     await this.engine.executeInternal(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(dataset.schemaName)}`);
@@ -1005,6 +1021,294 @@ export class Datera {
     return schemas;
   }
 
+  // ------------------------------------------- copy-on-write (§1.2, Phase 5)
+
+  /**
+   * Copy a dataset into a new one whose tables are real, editable tables.
+   *
+   * This is the mechanism behind "operate on a copy, export the copy" (§1.2). The source
+   * dataset's views still point at the untouched originals; the derived dataset holds
+   * materialised data that later phases may modify without any risk to them.
+   */
+  async deriveDataset(
+    datasetId: string,
+    input: { readonly name: string; readonly description?: string },
+  ): Promise<{ datasetId: string; tables: readonly string[] }> {
+    const source = await this.getDataset(datasetId);
+    assertAuthorableName(input.name, 'dataset');
+
+    const schemaName = await this.uniqueSchemaName(input.name);
+    const dataset: Dataset = {
+      id: this.makeId(),
+      name: input.name,
+      description: input.description ?? `Working copy of "${source.name}". The originals are untouched.`,
+      schemaName,
+      isDefault: false,
+      kind: 'derived',
+      derivedFrom: datasetId,
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+
+    await this.engine.executeInternal(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schemaName)}`);
+
+    const tables = await tablesIn(this.engine, source.schemaName);
+    for (const table of tables) {
+      // CREATE TABLE AS, not a view: the whole point is that this copy can change while
+      // the original cannot.
+      await this.engine.executeInternal(
+        `CREATE TABLE ${qualified(schemaName, table)} AS SELECT * FROM ${qualified(source.schemaName, table)}`,
+      );
+    }
+
+    await this.catalog.insertDataset(dataset);
+    this.ports.logger.log('info', 'Dataset derived', { from: datasetId, to: dataset.id, tables: tables.length });
+    return { datasetId: dataset.id, tables };
+  }
+
+  /** Snapshot a dataset. A version is a copy at a point in time (§3). */
+  async saveVersion(datasetId: string, label: string): Promise<Version> {
+    const dataset = await this.getDataset(datasetId);
+    const version: Version = {
+      id: this.makeId(),
+      datasetId,
+      label,
+      schemaName: await this.uniqueSchemaName(`v_${dataset.name}_${label}`),
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+    return saveVersionIn(this.engine, version, dataset.schemaName);
+  }
+
+  async listVersions(datasetId: string): Promise<readonly Version[]> {
+    await this.getDataset(datasetId);
+    return listVersionsIn(this.engine, datasetId);
+  }
+
+  async listVersionTables(versionId: string): Promise<readonly string[]> {
+    const version = await getVersion(this.engine, versionId);
+    if (version === null) {
+      throw new DateraError('DATASET_NOT_FOUND', `No version with id "${versionId}"`, { versionId });
+    }
+    return tablesIn(this.engine, version.schemaName);
+  }
+
+  /** Diff two versions. Computed from the two schemas, never from a model (§1.5). */
+  async diffVersions(fromId: string, toId: string): Promise<VersionDiff> {
+    const from = await getVersion(this.engine, fromId);
+    const to = await getVersion(this.engine, toId);
+    if (from === null || to === null) {
+      throw new DateraError('DATASET_NOT_FOUND', 'One of those versions does not exist', { fromId, toId });
+    }
+    return diffVersionsIn(this.engine, from, to);
+  }
+
+  /**
+   * Replace a table in a derived dataset from a SELECT.
+   *
+   * Exists so the version-diff tests can produce a genuine data change without waiting for
+   * the Phase 6 write path. Refuses on anything that is not a derived dataset, so it
+   * cannot be used to sidestep copy-on-write.
+   */
+  async replaceTableForTesting(datasetId: string, table: string, selectSql: string): Promise<void> {
+    const dataset = await this.getDataset(datasetId);
+    if (dataset.kind !== 'derived') {
+      throw new DateraError(
+        'READ_ONLY_VIOLATION',
+        'Tables can only be replaced in a derived dataset — the original is never modified (§1.2).',
+        { datasetId },
+      );
+    }
+    await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
+    await this.engine.executeInternal(
+      `CREATE OR REPLACE TABLE ${qualified(dataset.schemaName, table)} AS ${selectSql}`,
+    );
+  }
+
+  // ------------------------------------------------------- normalize (§7)
+
+  /**
+   * Propose splitting a flat sheet into entities. Measured, and stores nothing (§1.3).
+   */
+  async proposeNormalization(sourceId: string): Promise<NormalizationProposal> {
+    const source = await this.getSource(sourceId);
+    const dataset = await this.getDataset(source.datasetId);
+    const schema = await introspectSource(this.engine, source, dataset.schemaName);
+    return proposeNormalization(this.engine, dataset.schemaName, schema);
+  }
+
+  /**
+   * Apply a confirmed proposal — always into a **derived** dataset (§1.2).
+   *
+   * The source is never restructured in place, and there is no parameter here that would
+   * let a caller ask for that.
+   */
+  async applyNormalization(
+    sourceDatasetId: string,
+    proposal: NormalizationProposal,
+    input: { readonly name: string },
+  ): Promise<{ datasetId: string; tables: readonly string[] }> {
+    const source = await this.getDataset(sourceDatasetId);
+    assertAuthorableName(input.name, 'dataset');
+
+    const schemaName = await this.uniqueSchemaName(input.name);
+    const dataset: Dataset = {
+      id: this.makeId(),
+      name: input.name,
+      description: `Normalized from "${source.name}". The original is untouched.`,
+      schemaName,
+      isDefault: false,
+      kind: 'derived',
+      derivedFrom: sourceDatasetId,
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+
+    await this.engine.executeInternal(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schemaName)}`);
+    const tables = await applyNormalization(this.engine, source.schemaName, schemaName, proposal);
+    await this.catalog.insertDataset(dataset);
+
+    // The foreign keys the split creates are recorded as confirmed relationships: the user
+    // ratified the structure, so the links it implies are ratified too.
+    for (const entity of proposal.entities) {
+      await this.catalog.insertRelationship({
+        id: this.makeId(),
+        datasetId: dataset.id,
+        fromTable: proposal.factName,
+        fromColumn: entity.keyColumn,
+        toTable: entity.name,
+        toColumn: entity.keyColumn,
+        state: 'confirmed',
+        createdAt: this.ports.clock.now().toISOString(),
+      });
+    }
+
+    this.ports.logger.log('info', 'Normalization applied', {
+      from: sourceDatasetId, to: dataset.id, tables: tables.length,
+    });
+    return { datasetId: dataset.id, tables };
+  }
+
+  /** Propose enum promotion for a source's small-value-set columns (§7). */
+  async proposeEnums(sourceId: string): Promise<readonly EnumProposal[]> {
+    const source = await this.getSource(sourceId);
+    const dataset = await this.getDataset(source.datasetId);
+    const schema = await introspectSource(this.engine, source, dataset.schemaName);
+    return proposeEnums(this.engine, dataset.schemaName, schema);
+  }
+
+  // ------------------------------------------------ portability (§1.8, §12.11)
+
+  /** Export everything in open formats. See cow/export.ts for what "everything" means. */
+  async exportDataset(
+    datasetId: string,
+    directory: string,
+    options: { readonly format?: ExportFormat } = {},
+  ): Promise<ExportResult> {
+    const dataset = await this.getDataset(datasetId);
+
+    const dictionaries: SourceDictionary[] = [];
+    for (const source of (await this.listSources()).filter((s) => s.datasetId === datasetId)) {
+      dictionaries.push(await this.getDictionary(source.id));
+    }
+
+    return runExportDataset({
+      engine: this.engine,
+      fs: this.ports.fs,
+      dataset,
+      directory,
+      format: options.format ?? 'parquet',
+      dictionaries,
+      relationships: await this.catalog.listRelationships(datasetId),
+      now: () => this.ports.clock.now(),
+      appVersion: this.manifest.createdBy,
+    });
+  }
+
+  /**
+   * Import an exported directory into this workspace.
+   *
+   * The other half of §12.11: the round trip has to be lossless, including the semantic
+   * layer. An export that returned only rows would satisfy "you can get your data out"
+   * while still losing everything that made the data understandable.
+   */
+  async importDataset(directory: string): Promise<{ datasetId: string; tables: readonly string[] }> {
+    const manifestPath = joinPath(directory, MANIFEST_FILE);
+    if (!(await this.ports.fs.exists(manifestPath))) {
+      throw new DateraError('INVALID_ARGUMENT', `No ${MANIFEST_FILE} in ${directory}`, { directory });
+    }
+
+    let manifest: ExportManifest;
+    try {
+      manifest = parseManifest(await this.ports.fs.readTextFile(manifestPath));
+    } catch (e) {
+      throw asDateraError(e, 'INVALID_ARGUMENT', 'That export could not be read', { directory });
+    }
+
+    const schemaName = await this.uniqueSchemaName(manifest.dataset.name);
+    const dataset: Dataset = {
+      id: this.makeId(),
+      name: manifest.dataset.name,
+      description: manifest.dataset.description,
+      schemaName,
+      isDefault: false,
+      kind: 'imported',
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+
+    await this.engine.executeInternal(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schemaName)}`);
+    await this.catalog.insertDataset(dataset);
+
+    const created: string[] = [];
+    for (const table of manifest.tables) {
+      const file = joinPath(directory, table.file);
+      const reader = table.file.endsWith('.parquet')
+        ? `read_parquet(${quoteLiteral(file)})`
+        : `read_csv(${quoteLiteral(file)}, auto_detect=true)`;
+
+      await this.engine.executeInternal(
+        `CREATE TABLE ${qualified(schemaName, table.name)} AS SELECT * FROM ${reader}`,
+      );
+
+      // Registered as a source so the imported dataset behaves like any other — it has a
+      // dictionary, it can be asked questions, it can be exported again.
+      const source: Source = {
+        id: this.makeId(),
+        datasetId: dataset.id,
+        name: table.name,
+        kind: table.file.endsWith('.parquet') ? 'parquet' : 'csv',
+        origin: file,
+        detection: {
+          method: 'imported from a Datera export',
+          settings: { manifest: MANIFEST_FILE, exportedBy: manifest.exportedBy },
+        },
+        addedAt: this.ports.clock.now().toISOString(),
+      };
+      await this.catalog.insertSource(source);
+      created.push(table.name);
+
+      // The semantic layer, restored. This is the part a naive export drops.
+      const dictionary = manifest.dictionaries.find((d) => d.sourceName === table.name);
+      if (dictionary !== undefined) {
+        for (const column of dictionary.columns) {
+          if (column.state === 'undefined') continue;
+          await this.catalog.upsertColumnDefinition(source.id, column);
+        }
+        if (dictionary.entity.state !== 'undefined') {
+          await this.catalog.upsertEntityDefinition(source.id, dictionary.entity);
+        }
+      }
+    }
+
+    for (const relationship of manifest.relationships) {
+      await this.catalog.insertRelationship({
+        ...relationship,
+        id: this.makeId(),
+        datasetId: dataset.id,
+      });
+    }
+
+    this.ports.logger.log('info', 'Dataset imported', { datasetId: dataset.id, tables: created.length });
+    return { datasetId: dataset.id, tables: created };
+  }
+
   // --------------------------------------------------------------- authoring
 
   /**
@@ -1036,6 +1340,7 @@ export class Datera {
       description: input.description ?? '',
       schemaName,
       isDefault: false,
+      kind: 'connected',
       createdAt: this.ports.clock.now().toISOString(),
     };
 

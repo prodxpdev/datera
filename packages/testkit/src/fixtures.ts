@@ -27,6 +27,7 @@ export interface FixturePaths {
   readonly customersSqlite: string;
   readonly largeParquet: string;
   readonly wideCsv: string;
+  readonly flatSheetCsv: string;
 }
 
 export function fixturePaths(root: string): FixturePaths {
@@ -44,6 +45,7 @@ export function fixturePaths(root: string): FixturePaths {
     customersSqlite: join(root, 'customers.sqlite'),
     largeParquet: join(root, 'large.parquet'),
     wideCsv: join(root, 'studio_results_20260421_1238.csv'),
+    flatSheetCsv: join(root, 'flat_sheet.csv'),
   };
 }
 
@@ -122,6 +124,27 @@ const WIDE_CSV = `import_id,status,current_stage,status_message,started_at,updat
 2046581965196365826,failed,validate,Rejected: 12 rows missing a required postal code,2026-04-20 22:14:03.551000-04,2026-04-20 22:14:59.118000-04,2026-04-20 23:14:03.551000-04,12,0,12,s3://studio-imports/2026/04/20/batch-1199.parquet,nightly-loader@example.com
 `;
 
+/**
+ * The messy export from the marketing site's normalize story: customers, products and
+ * orders tangled into one sheet, with customer and product details repeating on every row.
+ *
+ * Built so the repetition is genuine and checkable by hand — three customers and three
+ * products across nine orders — because normalization proposals have to be evaluated by a
+ * person, and a fixture whose structure is not obvious cannot tell you whether the
+ * proposal was right.
+ */
+const FLAT_SHEET_CSV = `order_id,customer_email,customer_name,customer_city,product_sku,product_name,product_category,qty,revenue_cents
+A-1,ada@example.com,Ada Lovelace,London,SKU-1,Trail Hoodie,Apparel,1,8900
+A-2,ada@example.com,Ada Lovelace,London,SKU-2,Wool Beanie,Apparel,2,2400
+A-3,grace@example.com,Grace Hopper,New York,SKU-1,Trail Hoodie,Apparel,1,8900
+A-4,grace@example.com,Grace Hopper,New York,SKU-3,Summit Pack,Gear,1,12900
+A-5,alan@example.com,Alan Turing,Cambridge,SKU-3,Summit Pack,Gear,2,25800
+A-6,alan@example.com,Alan Turing,Cambridge,SKU-1,Trail Hoodie,Apparel,1,8900
+A-7,ada@example.com,Ada Lovelace,London,SKU-3,Summit Pack,Gear,1,12900
+A-8,grace@example.com,Grace Hopper,New York,SKU-2,Wool Beanie,Apparel,3,7200
+A-9,alan@example.com,Alan Turing,Cambridge,SKU-2,Wool Beanie,Apparel,1,2400
+`;
+
 /** Rows in the large fixture. Enough that a full scan is measurably slower than a preview. */
 export const LARGE_FIXTURE_ROWS = 1_000_000;
 
@@ -138,6 +161,7 @@ export async function generateFixtures(root: string = defaultFixtureRoot()): Pro
   await writeFile(paths.notesNdjson, NOTES_NDJSON, 'utf8');
   await writeFile(paths.nestedJson, NESTED_JSON, 'utf8');
   await writeFile(paths.wideCsv, WIDE_CSV, 'utf8');
+  await writeFile(paths.flatSheetCsv, FLAT_SHEET_CSV, 'utf8');
 
   await writeXlsx(paths.workbookXlsx, [
     {

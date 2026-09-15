@@ -126,6 +126,13 @@ export { OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel } from './model
 export type { EmbeddingModel, EmbeddingOptions } from './models/embeddings.js';
 export type { SearchHit, StoredChunk } from './semantic/store.js';
 export type { BuildResult } from './semantic/build.js';
+
+// ---------------------------------------------- copy-on-write (§1.2, §1.8)
+export type { Version, VersionDiff, RowCountChange, ColumnChange } from './cow/versions.js';
+export type { ExportManifest, ExportResult, ExportFormat } from './cow/export.js';
+export { MANIFEST_FILE } from './cow/export.js';
+export type { DatasetKind } from './datasets/types.js';
+export type { NormalizationProposal, EntityProposal, EnumProposal } from './cow/normalize.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';
