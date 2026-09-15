@@ -62,6 +62,11 @@ import {
   type EnumProposal, type NormalizationProposal,
 } from './cow/normalize.js';
 import {
+  applyWrite, assertWriteInDataset, classifyWrite, grant as grantWriteIn, isGranted,
+  migrateWrites, previewWrite, restore, revoke as revokeWriteIn,
+  type AppliedWrite, type WriteProposal,
+} from './writes/writes.js';
+import {
   countEmbedded, embeddedColumns, migrateEmbeddings, searchVectors, type SearchHit,
 } from './semantic/store.js';
 import {
@@ -82,6 +87,9 @@ import { detectLocalRuntimes, type DetectedRuntime } from './models/detect.js';
 import { AnthropicChatModel } from './models/anthropic.js';
 import { OpenAICompatibleChatModel } from './models/openai-compatible.js';
 import { describeModel, type ChatModel, type ModelDescriptor } from './models/types.js';
+import { TraceBuilder } from './query/trace.js';
+import { buildSchemaContext } from './query/context.js';
+import { extractSql } from './query/sql-extract.js';
 import { OfflineHttp, type HttpPort } from './ports/http.js';
 import { stem } from './util/paths.js';
 
@@ -174,6 +182,15 @@ export class Datera {
     private readonly http: HttpPort,
   ) {}
 
+  /**
+   * Proposals awaiting confirmation.
+   *
+   * Deliberately in memory and not persisted: a proposal's preview describes the data as
+   * it was a moment ago, and resurrecting one after a restart would invite confirming a
+   * change whose "this will affect 1,203 rows" is no longer true.
+   */
+  private readonly pendingWrites = new Map<string, WriteProposal>();
+
   static async open(options: DateraOptions): Promise<Datera> {
     const makeId = options.makeId ?? (() => crypto.randomUUID());
     const appVersion = options.appVersion ?? '0.1.0';
@@ -197,6 +214,7 @@ export class Datera {
     await catalog.migrate();
     await migrateEmbeddings(engine);
     await migrateVersions(engine);
+    await migrateWrites(engine);
 
     const datera = new Datera(
       engine,
@@ -1307,6 +1325,274 @@ export class Datera {
 
     this.ports.logger.log('info', 'Dataset imported', { datasetId: dataset.id, tables: created.length });
     return { datasetId: dataset.id, tables: created };
+  }
+
+  // ------------------------------------------------------------ writes (§6)
+
+  async canWrite(datasetId: string): Promise<boolean> {
+    await this.getDataset(datasetId);
+    return isGranted(this.engine, datasetId);
+  }
+
+  /**
+   * Grant writes on a dataset. Off by default, per dataset, revocable (§6).
+   *
+   * Only a **derived** dataset can be granted. A connected dataset's tables are views over
+   * the user's actual files, and §1.2 says those are never written — so rather than
+   * guarding that at execution time, the grant itself is refused, which puts the "no" at
+   * the moment of the decision instead of the moment of the accident.
+   */
+  async grantWrite(datasetId: string): Promise<void> {
+    const dataset = await this.getDataset(datasetId);
+    if (dataset.kind === 'connected') {
+      throw new DateraError(
+        'WRITE_NOT_PERMITTED',
+        `"${dataset.name}" reads your sources directly, and Datera never writes to a source (§1.2). ` +
+          `Derive a working copy first — writes land there, and the originals stay untouched.`,
+        { datasetId, kind: dataset.kind },
+      );
+    }
+    await grantWriteIn(this.engine, datasetId, this.ports.clock.now().toISOString());
+    this.ports.logger.log('warn', 'Write grant enabled', { datasetId, dataset: dataset.name });
+  }
+
+  async revokeWrite(datasetId: string): Promise<void> {
+    await this.getDataset(datasetId);
+    await revokeWriteIn(this.engine, datasetId);
+    this.ports.logger.log('info', 'Write grant revoked', { datasetId });
+  }
+
+  /**
+   * Propose a write. Nothing is executed — this builds the preview the gate needs.
+   */
+  async proposeWrite(datasetId: string, sql: string): Promise<WriteProposal> {
+    const dataset = await this.getDataset(datasetId);
+
+    if (!(await isGranted(this.engine, datasetId))) {
+      throw new DateraError(
+        'WRITE_NOT_PERMITTED',
+        `Writes are not enabled on "${dataset.name}". They are off by default and must be granted per dataset (§6).`,
+        { datasetId },
+      );
+    }
+
+    // search_path first: classification binds the statement, so `UPDATE orders` cannot be
+    // recognised until `orders` resolves.
+    await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
+
+    // Boundary before classification: "this reaches outside the dataset" is both more
+    // specific and more actionable than "that could not be bound", and a cross-dataset
+    // write usually cannot bind anyway — so classifying first buries the real complaint.
+    await assertWriteInDataset(this.engine.classificationConnection(), sql, dataset.schemaName, dataset.name);
+    const kind = await classifyWrite(this.engine.classificationConnection(), sql);
+
+    const preview = await previewWrite({
+      engine: this.engine,
+      schemaName: dataset.schemaName,
+      sql,
+      kind,
+    });
+
+    const proposal: WriteProposal = {
+      id: this.makeId(),
+      datasetId,
+      sql,
+      statementKind: kind,
+      table: preview.table,
+      rowsAffected: preview.rowsAffected,
+      changes: preview.changes,
+      warnings: preview.warnings,
+      proposedAt: this.ports.clock.now().toISOString(),
+    };
+
+    this.pendingWrites.set(proposal.id, proposal);
+    this.ports.logger.log('info', 'Write proposed (not executed)', {
+      datasetId, kind, rowsAffected: preview.rowsAffected,
+    });
+    return proposal;
+  }
+
+  /**
+   * Turn a question into a proposed write.
+   *
+   * §6's footgun: "an NL/agent DELETE from a fuzzy instruction". The model writes the SQL
+   * and Datera previews it — the answer to the footgun is not to refuse the capability but
+   * to make the consequence visible before it happens.
+   */
+  async proposeWriteFromQuestion(datasetId: string, instruction: string): Promise<WriteProposal> {
+    const dataset = await this.getDataset(datasetId);
+
+    if (!(await isGranted(this.engine, datasetId))) {
+      throw new DateraError(
+        'WRITE_NOT_PERMITTED',
+        `Writes are not enabled on "${dataset.name}".`,
+        { datasetId },
+      );
+    }
+
+    const model = await this.chatModel();
+    if (model === null) {
+      throw new DateraError('MODEL_UNAVAILABLE', 'No chat model is configured.', { datasetId });
+    }
+
+    const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
+    const trace = new TraceBuilder(
+      this.makeId(), datasetId, instruction,
+      this.ports.clock.now().toISOString(), () => this.ports.clock.monotonicMs(),
+    );
+
+    const schemaContext = buildSchemaContext(schemas);
+    trace.add({ kind: 'schema', label: 'Schema given to the model', detail: schemaContext });
+
+    const system = [
+      'You translate an instruction into a single DuckDB UPDATE, DELETE or INSERT statement.',
+      'Return ONLY SQL. Exactly one statement. Never a SELECT.',
+      'Use only the tables and columns given. Never invent a column.',
+    ].join('\n');
+    const user = `Tables:\n\n${schemaContext}\n\nInstruction: ${instruction}\n\nSQL:`;
+
+    const response = await model.chat({
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      temperature: 0,
+    });
+
+    trace.add({
+      kind: 'model',
+      label: 'Sent to model',
+      model: response.model,
+      modelName: describeModel(response.model),
+      modelPayload: `${system}\n\n---\n\n${user}`,
+      inputTokens: response.usage.inputTokens,
+      outputTokens: response.usage.outputTokens,
+      costUsd: response.usage.costUsd,
+    });
+
+    const extracted = extractSql(response.text);
+    if (extracted.sql === null) {
+      throw new DateraError(
+        'CANNOT_ANSWER',
+        `The model did not produce a statement for that instruction. ${extracted.cannotAnswer ?? ''}`.trim(),
+        { datasetId, instruction },
+      );
+    }
+
+    trace.add({ kind: 'sql', label: 'Proposed SQL', sql: extracted.sql, detail: 'Shown before anything runs.' });
+
+    const proposal = await this.proposeWrite(datasetId, extracted.sql);
+    const withTrace: WriteProposal = { ...proposal, trace: trace.build('structured', true) };
+    this.pendingWrites.set(proposal.id, withTrace);
+    return withTrace;
+  }
+
+  /** Execute a proposal. The only path that changes data. */
+  async confirmWrite(proposalId: string): Promise<AppliedWrite> {
+    const proposal = this.pendingWrites.get(proposalId);
+    if (proposal === undefined) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        'That proposal is not pending — it may already have been confirmed, or this is a new session.',
+        { proposalId },
+      );
+    }
+
+    const dataset = await this.getDataset(proposal.datasetId);
+
+    // Re-checked at confirm time, not just at propose time: a grant revoked in between
+    // must take effect, or "revocable" would mean "revocable for future proposals".
+    if (!(await isGranted(this.engine, proposal.datasetId))) {
+      throw new DateraError(
+        'WRITE_NOT_PERMITTED',
+        `Writes were disabled on "${dataset.name}" after this was proposed, so it was not applied.`,
+        { proposalId, datasetId: proposal.datasetId },
+      );
+    }
+
+    const undoSchema = `_undo_${dataset.schemaName}`;
+    const undoTable = `${proposal.table}_${proposal.id.replace(/[^\w]/g, '')}`;
+
+    const delta = await applyWrite({
+      engine: this.engine,
+      schemaName: dataset.schemaName,
+      undoSchema,
+      undoTable,
+      table: proposal.table,
+      sql: proposal.sql,
+    });
+
+    const rowsChanged = proposal.statementKind === 'UPDATE' ? proposal.rowsAffected : delta;
+    const applied: AppliedWrite = {
+      id: this.makeId(),
+      datasetId: proposal.datasetId,
+      sql: proposal.sql,
+      rowsChanged,
+      confirmedAt: this.ports.clock.now().toISOString(),
+      undoneAt: null,
+    };
+
+    await this.engine.executeInternal(
+      `INSERT INTO _datera.write_log
+        (id, dataset_id, sql, rows_changed, undo_schema, undo_table, target_table, confirmed_at, undone_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      [applied.id, applied.datasetId, applied.sql, rowsChanged, undoSchema, undoTable, proposal.table, applied.confirmedAt],
+    );
+
+    this.pendingWrites.delete(proposalId);
+    this.ports.logger.log('warn', 'Write applied', {
+      datasetId: proposal.datasetId, kind: proposal.statementKind, rowsChanged,
+    });
+    return applied;
+  }
+
+  /** Revert a confirmed write from its snapshot. */
+  async undoWrite(writeId: string): Promise<void> {
+    const result = await this.engine.executeInternal(
+      `SELECT dataset_id, undo_schema, undo_table, target_table, undone_at
+       FROM _datera.write_log WHERE id = ?`,
+      [writeId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new DateraError('INVALID_ARGUMENT', `No write with id "${writeId}"`, { writeId });
+    }
+    if (row[4] !== null) {
+      throw new DateraError('INVALID_ARGUMENT', 'That write has already been undone.', { writeId });
+    }
+
+    const dataset = await this.getDataset(String(row[0]));
+    await restore({
+      engine: this.engine,
+      schemaName: dataset.schemaName,
+      undoSchema: String(row[1]),
+      undoTable: String(row[2]),
+      table: String(row[3]),
+    });
+
+    await this.engine.executeInternal(`UPDATE _datera.write_log SET undone_at = ? WHERE id = ?`, [
+      this.ports.clock.now().toISOString(),
+      writeId,
+    ]);
+    this.ports.logger.log('warn', 'Write undone', { writeId });
+  }
+
+  /** The audit log of applied writes (§6). */
+  async listWrites(datasetId: string): Promise<readonly AppliedWrite[]> {
+    await this.getDataset(datasetId);
+    const result = await this.engine.executeInternal(
+      `SELECT id, dataset_id, sql, rows_changed, confirmed_at, undone_at
+       FROM _datera.write_log WHERE dataset_id = ? ORDER BY confirmed_at`,
+      [datasetId],
+    );
+    return result.rows.map((row) => ({
+      id: String(row[0]),
+      datasetId: String(row[1]),
+      sql: String(row[2]),
+      rowsChanged: Number(row[3]),
+      confirmedAt: String(row[4]),
+      undoneAt: row[5] === null ? null : String(row[5]),
+    }));
   }
 
   // --------------------------------------------------------------- authoring

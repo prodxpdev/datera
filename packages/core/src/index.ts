@@ -133,6 +133,9 @@ export type { ExportManifest, ExportResult, ExportFormat } from './cow/export.js
 export { MANIFEST_FILE } from './cow/export.js';
 export type { DatasetKind } from './datasets/types.js';
 export type { NormalizationProposal, EntityProposal, EnumProposal } from './cow/normalize.js';
+
+// ------------------------------------------------------------- writes (§6)
+export type { WriteProposal, AppliedWrite, RowChange, WriteKind } from './writes/writes.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';

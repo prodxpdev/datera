@@ -10,7 +10,7 @@
     "build": "pnpm -r --filter=./packages/** build",
     "typecheck": "tsc -b --pretty",
     "lint": "eslint .",
-    "test": "tsc -b && vitest run",
+    "test": "vitest run",
     "test:watch": "vitest",
     "fixtures": "pnpm -w exec tsc -b && node packages/testkit/dist/make-fixtures.js",
     "desktop": "pnpm --filter @datera/desktop dev",

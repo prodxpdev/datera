@@ -18,6 +18,7 @@ export type DateraErrorCode =
   | 'MODEL_CALL_FAILED'
   | 'MODEL_UNAVAILABLE'
   | 'CANNOT_ANSWER'
+  | 'WRITE_NOT_PERMITTED'
   | 'INVALID_ARGUMENT';
 
 export class DateraError extends Error {

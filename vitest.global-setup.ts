@@ -21,6 +21,20 @@ const run = promisify(execFile);
  *    a thing to remember.
  */
 export async function setup(): Promise<void> {
+  // Compile first. `vitest run` on its own does not, so without this a suite can assert
+  // against a stale packages/*/dist — which has already cost real debugging time once.
+  // Making it part of setup means no invocation of the tests can skip it.
+  try {
+    await run('node', ['node_modules/typescript/bin/tsc', '-b'], { cwd: process.cwd() });
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string; message?: string };
+    throw new Error(
+      `TypeScript build failed, so the tests would have run against stale output.\n` +
+        `${err.stdout ?? ''}${err.stderr ?? ''}${err.message ?? ''}`,
+      { cause: e },
+    );
+  }
+
   const paths = await generateFixtures();
   process.env.DATERA_FIXTURES = paths.root;
 
