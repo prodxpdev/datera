@@ -120,6 +120,12 @@ export { buildSchemaContext, summariseSchemas, SYSTEM_PROMPT } from './query/con
 export { extractSql } from './query/sql-extract.js';
 export { assertWithinDataset, extractTableReferences } from './query/scope.js';
 export { summariseTouched } from './query/touched.js';
+export { routeQuestion } from './query/router.js';
+export type { RouteDecision } from './query/router.js';
+export { OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel } from './models/embeddings.js';
+export type { EmbeddingModel, EmbeddingOptions } from './models/embeddings.js';
+export type { SearchHit, StoredChunk } from './semantic/store.js';
+export type { BuildResult } from './semantic/build.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';

@@ -214,7 +214,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           {nav === 'sql' && (
             <SqlView api={api} datasetId={dataset?.id ?? 'ungrouped'} datasetName={dataset?.name ?? 'Ungrouped'} />
           )}
-          {nav === 'models' && <Models api={api} />}
+          {nav === 'models' && <Models api={api} datasetId={dataset?.id ?? 'ungrouped'} />}
           {nav === 'dictionary' && <Dictionary api={api} sources={loaded.sources} />}
 
           {nav === 'workspace' && (loaded.sources.length === 0 ? (

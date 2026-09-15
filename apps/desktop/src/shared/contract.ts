@@ -1,6 +1,8 @@
 import type {
   AddSourceRequest,
   AskResult,
+  BuildResult,
+  SearchHit,
   AuthoredRelationship,
   ColumnDefinition,
   EntityDefinition,
@@ -41,7 +43,7 @@ export interface DateraApi {
   pickFiles(): Promise<readonly string[]>;
 
   // ---- Phase 2 -----------------------------------------------------------
-  ask(datasetId: string, question: string): Promise<AskResult>;
+  ask(datasetId: string, question: string, options?: { topK?: number }): Promise<AskResult>;
   listModels(): Promise<ModelCatalogue>;
   setChatModel(model: ModelDescriptor): Promise<void>;
   setApiKey(provider: string, apiKey: string): Promise<void>;
@@ -58,6 +60,12 @@ export interface DateraApi {
   listRelationships(datasetId?: string): Promise<readonly AuthoredRelationship[]>;
   createDataset(input: { id?: string; name: string; description?: string }): Promise<unknown>;
   explainTouched(datasetId: string, sql: string, rowsReturned?: number): Promise<TouchedSummary>;
+
+  // ---- Phase 4 -----------------------------------------------------------
+  setEmbeddingModel(model: ModelDescriptor): Promise<void>;
+  buildEmbeddings(datasetId: string): Promise<BuildResult>;
+  semanticSearch(datasetId: string, text: string, k?: number): Promise<readonly SearchHit[]>;
+  embeddingStatus(datasetId: string): Promise<{ chunks: number; columns: readonly string[] }>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -86,6 +94,10 @@ export const IPC = {
   listRelationships: 'datera:listRelationships',
   createDataset: 'datera:createDataset',
   explainTouched: 'datera:explainTouched',
+  setEmbeddingModel: 'datera:setEmbeddingModel',
+  buildEmbeddings: 'datera:buildEmbeddings',
+  semanticSearch: 'datera:semanticSearch',
+  embeddingStatus: 'datera:embeddingStatus',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

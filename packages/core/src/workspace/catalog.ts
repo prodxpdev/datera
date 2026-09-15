@@ -6,6 +6,7 @@ import type { ColumnDefinition, EntityDefinition } from '../dictionary/types.js'
 
 export const CATALOG_SCHEMA = '_datera';
 
+
 /**
  * Datera's own bookkeeping, stored inside workspace.duckdb.
  *

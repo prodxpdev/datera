@@ -14,6 +14,15 @@ import { fileURLToPath } from 'node:url';
 
 const REQUIRED = ['excel', 'sqlite_scanner', 'postgres_scanner', 'mysql_scanner'];
 
+/**
+ * Nice to have, not required.
+ *
+ * `vss` adds HNSW indexing for vector search. Cosine similarity itself is a core DuckDB
+ * function, so the semantic path works without it — this only makes large corpora faster,
+ * and a failure to stage it must not fail the install.
+ */
+const OPTIONAL = ['vss'];
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const target = process.env.DATERA_EXTENSION_DIR
   ? resolve(process.env.DATERA_EXTENSION_DIR)
@@ -36,6 +45,16 @@ for (const name of REQUIRED) {
   } catch (e) {
     failed += 1;
     console.error(`  ✗ ${name}: ${e.message}`);
+  }
+}
+
+for (const name of OPTIONAL) {
+  try {
+    await conn.run(`INSTALL ${name}`);
+    await conn.run(`LOAD ${name}`);
+    console.log(`  ✓ ${name} (optional)`);
+  } catch (e) {
+    console.log(`  · ${name} unavailable (optional, ignored): ${e.message.split('\n')[0]}`);
   }
 }
 

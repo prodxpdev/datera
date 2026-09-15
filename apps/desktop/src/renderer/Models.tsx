@@ -19,12 +19,20 @@ const REMOTE_PROVIDERS: readonly { id: string; label: string; hint: string }[] =
   { id: 'openai', label: 'OpenAI', hint: 'sk-…' },
 ];
 
-export function Models({ api }: { readonly api: DateraApi }): JSX.Element {
+export function Models({
+  api,
+  datasetId,
+}: {
+  readonly api: DateraApi;
+  readonly datasetId: string;
+}): JSX.Element {
   const [catalogue, setCatalogue] = useState<ModelCatalogue | null>(null);
   const [keys, setKeys] = useState<Record<string, boolean>>({});
   const [entry, setEntry] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [embedded, setEmbedded] = useState<{ chunks: number; columns: readonly string[] } | null>(null);
+  const [embedding, setEmbedding] = useState(false);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -36,10 +44,11 @@ export function Models({ api }: { readonly api: DateraApi }): JSX.Element {
         present[provider.id] = await api.hasApiKey(provider.id);
       }
       setKeys(present);
+      setEmbedded(await api.embeddingStatus(datasetId));
     } finally {
       setBusy(false);
     }
-  }, [api]);
+  }, [api, datasetId]);
 
   useEffect(() => {
     void refresh();
@@ -180,6 +189,64 @@ export function Models({ api }: { readonly api: DateraApi }): JSX.Element {
             <span className="tg key">BYOK</span>
           </div>
         ))}
+      </section>
+
+      <section className="tier">
+        <h3>Embeddings — chosen separately</h3>
+        <p className="tierdesc">
+          The semantic path embeds your <b>text</b>, where the SQL path only ever sends the schema.
+          That difference is why this is a separate choice and never follows the chat model.
+        </p>
+
+        {catalogue.embeddingCandidates.length === 0 ? (
+          <div className="emptyrail">
+            No local embedding model detected. With Ollama:{' '}
+            <span className="mono">ollama pull nomic-embed-text</span>
+          </div>
+        ) : (
+          catalogue.embeddingCandidates.map((model) => (
+            <div
+              key={`embed-${model.id}`}
+              className={`opt ${catalogue.selectedEmbedding?.id === model.id ? 'on' : ''}`}
+              onClick={() => void api.setEmbeddingModel(model).then(refresh)}
+            >
+              <span className="radio" />
+              <div>
+                <div className="ot">{model.id}</div>
+                <div className="od">{model.provider} · embeddings</div>
+              </div>
+              <span className="tg free">local</span>
+            </div>
+          ))
+        )}
+
+        {catalogue.selectedEmbedding !== null && (
+          <div className="embedrow">
+            <button
+              className="btn p"
+              data-buildembed
+              disabled={embedding}
+              onClick={() => {
+                setEmbedding(true);
+                void api
+                  .buildEmbeddings(datasetId)
+                  .then((r) => setNote(`Embedded ${r.chunksEmbedded} new chunk(s); reused ${r.chunksReused}.`))
+                  .catch((e: { message?: string }) => setNote(e.message ?? 'Embedding failed.'))
+                  .finally(() => {
+                    setEmbedding(false);
+                    void refresh();
+                  });
+              }}
+            >
+              {embedding ? 'Embedding…' : 'Build embeddings for this dataset'}
+            </button>
+            <span className="embedstat">
+              {embedded === null || embedded.chunks === 0
+                ? 'nothing embedded yet'
+                : `${embedded.chunks} chunks across ${embedded.columns.join(', ')}`}
+            </span>
+          </div>
+        )}
       </section>
 
       <div className="caveat">

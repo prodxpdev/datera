@@ -123,7 +123,9 @@ function registerHandlers(): void {
     core().preview(sourceId, options ?? {}),
   );
   handle(IPC.query, async (datasetId: string, sql: string) => core().query(datasetId, sql));
-  handle(IPC.ask, async (datasetId: string, question: string) => core().ask(datasetId, question));
+  handle(IPC.ask, async (datasetId: string, question: string, opts?: { topK?: number }) =>
+    core().ask(datasetId, question, opts ?? {}),
+  );
   handle(IPC.listModels, async () => core().listModels());
   handle(IPC.setChatModel, async (model: ModelDescriptor) => core().setChatModel(model));
   handle(IPC.setApiKey, async (provider: string, key: string) => core().setApiKey(provider, key));
@@ -140,6 +142,12 @@ function registerHandlers(): void {
   handle(IPC.explainTouched, async (datasetId: string, sql: string, rows?: number) =>
     core().explainTouched(datasetId, sql, rows ?? 0),
   );
+  handle(IPC.setEmbeddingModel, async (m: ModelDescriptor) => core().setEmbeddingModel(m));
+  handle(IPC.buildEmbeddings, async (datasetId: string) => core().buildEmbeddings(datasetId));
+  handle(IPC.semanticSearch, async (datasetId: string, text: string, k?: number) =>
+    core().semanticSearch(datasetId, text, k ?? 5),
+  );
+  handle(IPC.embeddingStatus, async (datasetId: string) => core().embeddingStatus(datasetId));
 
   handle(IPC.pickFiles, async () => {
     if (window === null) return [];

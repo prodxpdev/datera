@@ -9,6 +9,9 @@ import type { AuthoredRelationship } from '../datasets/authoring.js';
 import { buildSchemaContext, buildUserPrompt, summariseSchemas, SYSTEM_PROMPT } from './context.js';
 import { extractSql } from './sql-extract.js';
 import { TraceBuilder, type Route, type Trace } from './trace.js';
+import { routeQuestion } from './router.js';
+import type { EmbeddingModel } from '../models/embeddings.js';
+import type { SearchHit } from '../semantic/store.js';
 
 export interface AskResult {
   readonly question: string;
@@ -46,6 +49,13 @@ export interface AskOptions {
   /** Confirmed definitions only — filtering happens in buildSchemaContext (§1.3). */
   readonly dictionaries?: readonly SourceDictionary[] | undefined;
   readonly relationships?: readonly AuthoredRelationship[] | undefined;
+  /** Null when no embedding model is configured — the semantic path is then unavailable. */
+  readonly embeddingModel?: EmbeddingModel | null | undefined;
+  /** Columns that actually have vectors stored. Drives routing (§12.5). */
+  readonly embeddedColumns?: readonly string[] | undefined;
+  /** Retrieval, injected so `ask` never reaches the store directly. */
+  readonly search?: ((vector: readonly number[], k: number) => Promise<readonly SearchHit[]>) | undefined;
+  readonly topK?: number | undefined;
   readonly question: string;
   readonly traceId: string;
   readonly now: () => Date;
@@ -80,7 +90,7 @@ export async function ask(options: AskOptions): Promise<AskResult> {
     options.monotonicMs,
   );
 
-  const decline = (flag: string, route: Route = 'structured'): AskResult => ({
+  const decline = (flag: string, declineRoute: Route = 'structured'): AskResult => ({
     question: options.question,
     datasetId: options.datasetId,
     sql: null,
@@ -89,7 +99,7 @@ export async function ask(options: AskOptions): Promise<AskResult> {
     citations: { sources: [], columns: [], rowCount: 0 },
     answerable: false,
     flag,
-    trace: trace.build(route, false),
+    trace: trace.build(declineRoute, false),
   });
 
   // ---- parse -------------------------------------------------------------
@@ -104,15 +114,14 @@ export async function ask(options: AskOptions): Promise<AskResult> {
   });
 
   // ---- route -------------------------------------------------------------
-  // Phase 2 has one path. The decision is still recorded, because the routing stage is
-  // part of the glass box from the first answer, and Phase 4 adds the semantic branch
-  // here rather than introducing the concept then.
-  const route: Route = 'structured';
+  // Computed from the question and the dataset's shape, in code (§1.5, §12.5).
+  const decision = routeQuestion(question, options.embeddedColumns ?? []);
+  const route: Route = decision.route;
   trace.add({
     kind: 'route',
     label: 'Routing',
     route,
-    detail: 'Structured → NL→SQL over the dataset schema. No embeddings were computed.',
+    detail: `${decision.reason} Signals: ${decision.signals.join(', ')}.`,
   });
 
   if (options.model === null) {
@@ -124,7 +133,11 @@ export async function ask(options: AskOptions): Promise<AskResult> {
   }
 
   if (options.schemas.length === 0) {
-    return decline('This dataset has no sources, so there is nothing to query.');
+    return decline('This dataset has no sources, so there is nothing to query.', route);
+  }
+
+  if (route === 'semantic') {
+    return answerSemantically(options, trace, question, decline);
   }
 
   // ---- schema ------------------------------------------------------------
@@ -173,7 +186,11 @@ export async function ask(options: AskOptions): Promise<AskResult> {
   if (extracted.cannotAnswer !== null) {
     trace.add({ kind: 'sql', label: 'No SQL generated', detail: extracted.cannotAnswer });
     return decline(
-      `Datera could not answer this from the connected data: ${extracted.cannotAnswer}`,
+      `Datera could not answer this from the connected data: ${extracted.cannotAnswer}` +
+        (decision.semanticUnavailable
+          ? ' If you meant to search free text by meaning, build embeddings for this dataset first.'
+          : ''),
+      route,
     );
   }
 
@@ -184,7 +201,11 @@ export async function ask(options: AskOptions): Promise<AskResult> {
       detail: `The model returned no usable statement: ${response.text.slice(0, 200)}`,
     });
     return decline(
-      'The model did not produce a SQL statement. Try rephrasing, or pick a stronger model — small local models struggle with vague questions.',
+      'The model did not produce a SQL statement. Try rephrasing, or pick a stronger model — small local models struggle with vague questions.' +
+        (decision.semanticUnavailable
+          ? ' This looks like a question about the meaning of free text: build embeddings for this dataset and Datera can search it by meaning instead.'
+          : ''),
+      route,
     );
   }
 
@@ -298,4 +319,127 @@ function mentions(sql: string, identifier: string): boolean {
  */
 function engineConnection(engine: Engine): Parameters<typeof assertReadOnlySql>[0] {
   return engine.classificationConnection();
+}
+
+
+/**
+ * The semantic path (spec §5).
+ *
+ * Embed the question, retrieve the closest chunks, and send **only those chunks** to the
+ * model — never the corpus. That is the whole point of retrieval: the model sees a handful
+ * of records instead of everything, which is both what makes it affordable and what keeps
+ * the exposure bounded.
+ *
+ * Note the asymmetry with the structured path, which is worth being clear-eyed about: the
+ * structured path sends schema only, while this one necessarily sends *actual text*. The
+ * user is told so in the trace rather than left to infer it.
+ */
+async function answerSemantically(
+  options: AskOptions,
+  trace: TraceBuilder,
+  question: string,
+  decline: (flag: string, route?: Route) => AskResult,
+): Promise<AskResult> {
+  const embedder = options.embeddingModel ?? null;
+  const search = options.search;
+
+  if (embedder === null || search === undefined) {
+    return decline(
+      'This question is about the meaning of free text, but no embedding model is configured. Choose one in Models — a local embedder keeps the text on this machine.',
+      'semantic',
+    );
+  }
+
+  if ((options.embeddedColumns ?? []).length === 0) {
+    return decline(
+      'Nothing has been embedded in this dataset yet. Build embeddings first, and the text columns become searchable by meaning.',
+      'semantic',
+    );
+  }
+
+  // ---- embed the question ------------------------------------------------
+  const [queryVector] = await embedder.embed([question]);
+  if (queryVector === undefined) {
+    return decline('The embedding model returned no vector for the question.', 'semantic');
+  }
+
+  trace.add({
+    kind: 'embed',
+    label: 'Question embedded',
+    model: embedder.descriptor,
+    modelName: describeModel(embedder.descriptor),
+    detail: `The question became a ${queryVector.length}-dimension vector. Your text was embedded ${embedder.descriptor.locality === 'local' ? 'on this machine' : 'by a remote provider'}.`,
+  });
+
+  // ---- retrieve ----------------------------------------------------------
+  const k = Math.max(1, Math.trunc(options.topK ?? 5));
+  const hits = await search(queryVector, k);
+
+  if (hits.length === 0) {
+    trace.add({ kind: 'retrieve', label: 'Nothing matched', detail: 'No embedded chunk was similar enough.' });
+    return decline('Nothing in the embedded text was close enough to this question to answer it.', 'semantic');
+  }
+
+  trace.add({
+    kind: 'retrieve',
+    label: 'Closest matches',
+    rowCount: hits.length,
+    detail: hits
+      .map((h) => `${h.source}#${h.rowKey} (${h.score.toFixed(3)})`)
+      .join(', '),
+  });
+
+  // ---- model -------------------------------------------------------------
+  const context = hits
+    .map((h, i) => `[${i + 1}] ${h.source}#${h.rowKey} — ${h.text}`)
+    .join('\n\n');
+
+  const system = [
+    'You answer questions using only the excerpts provided.',
+    'Cite the excerpt numbers you used, like [1].',
+    'If the excerpts do not answer the question, say so plainly. Never invent details.',
+  ].join('\n');
+  const user = `Excerpts:\n\n${context}\n\nQuestion: ${question}`;
+
+  const response = await options.model!.chat({
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    temperature: 0,
+  });
+
+  trace.add({
+    kind: 'model',
+    label: 'Sent to model',
+    model: response.model,
+    modelName: describeModel(response.model),
+    modelPayload: `${system}\n\n---\n\n${user}`,
+    inputTokens: response.usage.inputTokens,
+    outputTokens: response.usage.outputTokens,
+    costUsd: response.usage.costUsd,
+    detail:
+      `Only the ${hits.length} closest excerpt${hits.length === 1 ? '' : 's'} went to the model — not the whole corpus. ` +
+      `Unlike the structured path, this necessarily includes real text from your data.`,
+  });
+
+  return {
+    question,
+    datasetId: options.datasetId,
+    sql: null,
+    columns: [
+      { name: 'match', type: 'VARCHAR' },
+      { name: 'score', type: 'DOUBLE' },
+      { name: 'text', type: 'VARCHAR' },
+    ],
+    rows: hits.map((h) => [`${h.source}#${h.rowKey}`, h.score, h.text]),
+    citations: {
+      sources: [...new Set(hits.map((h) => h.source))],
+      columns: [...new Set(hits.map((h) => h.column))],
+      rowCount: hits.length,
+    },
+    answerable: true,
+    flag: response.text.trim().length > 0 ? response.text.trim() : null,
+    trace: trace.build('semantic', true),
+  };
 }

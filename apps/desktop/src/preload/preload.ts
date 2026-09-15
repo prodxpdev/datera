@@ -41,6 +41,10 @@ const IPC = {
   listRelationships: 'datera:listRelationships',
   createDataset: 'datera:createDataset',
   explainTouched: 'datera:explainTouched',
+  setEmbeddingModel: 'datera:setEmbeddingModel',
+  buildEmbeddings: 'datera:buildEmbeddings',
+  semanticSearch: 'datera:semanticSearch',
+  embeddingStatus: 'datera:embeddingStatus',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -56,7 +60,7 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   preview: (sourceId: string, options?: unknown) => call(IPC.preview, sourceId, options),
   query: (datasetId: string, sql: string) => call(IPC.query, datasetId, sql),
   pickFiles: () => call(IPC.pickFiles),
-  ask: (datasetId: string, question: string) => call(IPC.ask, datasetId, question),
+  ask: (datasetId: string, question: string, opts?: unknown) => call(IPC.ask, datasetId, question, opts),
   listModels: () => call(IPC.listModels),
   setChatModel: (model: unknown) => call(IPC.setChatModel, model),
   setApiKey: (provider: string, key: string) => call(IPC.setApiKey, provider, key),
@@ -71,4 +75,8 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   listRelationships: (datasetId?: string) => call(IPC.listRelationships, datasetId),
   createDataset: (input: unknown) => call(IPC.createDataset, input),
   explainTouched: (datasetId: string, sql: string, rows?: number) => call(IPC.explainTouched, datasetId, sql, rows),
+  setEmbeddingModel: (m: unknown) => call(IPC.setEmbeddingModel, m),
+  buildEmbeddings: (datasetId: string) => call(IPC.buildEmbeddings, datasetId),
+  semanticSearch: (datasetId: string, text: string, k?: number) => call(IPC.semanticSearch, datasetId, text, k),
+  embeddingStatus: (datasetId: string) => call(IPC.embeddingStatus, datasetId),
 });

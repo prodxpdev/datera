@@ -6,7 +6,12 @@ import type { LoggerPort } from '../ports/logger.js';
  * Extensions the Phase 1 format set needs, beyond what DuckDB links statically
  * (json, parquet, icu and core_functions are already in the binary).
  */
-export const REQUIRED_EXTENSIONS = ['excel', 'sqlite_scanner', 'postgres_scanner', 'mysql_scanner'] as const;
+export const REQUIRED_EXTENSIONS = [
+  'excel', 'sqlite_scanner', 'postgres_scanner', 'mysql_scanner',
+  // Optional: HNSW indexing for the semantic path. Cosine similarity is a core DuckDB
+  // function, so its absence slows large corpora rather than breaking anything.
+  'vss',
+] as const;
 export type RequiredExtension = (typeof REQUIRED_EXTENSIONS)[number];
 
 export interface ExtensionStatus {

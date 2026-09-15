@@ -240,3 +240,5 @@
 .rowacts .btn { padding: 3px 8px; font-size: 11px; }
 .dcpay { margin-top: 14px; border: 1px solid var(--indigo-line); background: var(--indigo-bg); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--ink2); }
 .dcpay b { color: var(--ink); }
+.embedrow { display: flex; align-items: center; gap: 11px; margin-top: 10px; flex-wrap: wrap; }
+.embedstat { font-family: var(--mono); font-size: 11px; color: var(--ink3); }

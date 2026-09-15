@@ -33,6 +33,7 @@ const METHODS = [
   'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmEntity',
   'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',
   'explainTouched',
+  'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {

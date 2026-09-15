@@ -48,6 +48,30 @@ export interface StubModelServer {
  * a configured flavour keeps the tests honest: a provider that called the wrong endpoint
  * would 404 here instead of being quietly answered.
  */
+/** Vector length. Small, so fixtures stay readable in a failure message. */
+const EMBEDDING_DIMS = 32;
+
+/**
+ * A deterministic bag-of-words vector.
+ *
+ * Not a real embedding, and not pretending to be: it exists so tests can assert that
+ * texts sharing words score higher than texts that do not, which is the only semantic
+ * property the retrieval code itself is responsible for. Whether a *real* model places
+ * "cracked" near "damaged" is the model's business, not Datera's, and mocking that would
+ * be testing a fiction.
+ */
+function pseudoEmbedding(text: string): number[] {
+  const vector = new Array<number>(EMBEDDING_DIMS).fill(0);
+  for (const word of text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2)) {
+    let hash = 0;
+    for (let i = 0; i < word.length; i += 1) hash = (hash * 31 + word.charCodeAt(i)) >>> 0;
+    const slot = hash % EMBEDDING_DIMS;
+    vector[slot] = (vector[slot] ?? 0) + 1;
+  }
+  const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0)) || 1;
+  return vector.map((v) => v / norm);
+}
+
 function parseJson(body: string): unknown {
   if (body.length === 0) return null;
   try {
@@ -117,6 +141,26 @@ export async function startStubModelServer(): Promise<StubModelServer> {
             model: models[0] ?? 'stub',
             choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
             usage: { prompt_tokens: 123, completion_tokens: 45, total_tokens: 168 },
+          });
+          return;
+        }
+
+        // Embeddings. Deterministic pseudo-vectors derived from the text, so a test can
+        // rely on "similar text scores higher" without needing a real embedding model.
+        if (path.startsWith('/v1/embeddings')) {
+          const body = json as { input?: unknown };
+          const inputs = Array.isArray(body?.input)
+            ? (body.input as unknown[]).map(String)
+            : [String(body?.input ?? '')];
+          respond(200, {
+            object: 'list',
+            data: inputs.map((text, index) => ({
+              object: 'embedding',
+              index,
+              embedding: pseudoEmbedding(text),
+            })),
+            model: 'stub-embed',
+            usage: { prompt_tokens: 10, total_tokens: 10 },
           });
           return;
         }

@@ -46,6 +46,13 @@ import { introspectSource, introspectRelation, type SourceSchema } from './schem
 import { ask, type AskResult } from './query/ask.js';
 import { assertWithinDataset } from './query/scope.js';
 import { summariseTouched, type TouchedSummary } from './query/touched.js';
+import { buildEmbeddings as runBuildEmbeddings, type BuildResult } from './semantic/build.js';
+import {
+  countEmbedded, embeddedColumns, migrateEmbeddings, searchVectors, type SearchHit,
+} from './semantic/store.js';
+import {
+  OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel, type EmbeddingModel,
+} from './models/embeddings.js';
 import { draftDictionary } from './dictionary/draft.js';
 import {
   UNDEFINED_ENTITY,
@@ -109,6 +116,7 @@ export interface QueryResult {
 
 /** Where the chosen chat model is remembered between launches. */
 const CHAT_MODEL_SETTING = 'model.chat';
+const EMBEDDING_MODEL_SETTING = 'model.embedding';
 /** Keychain entry holding the API key for a remote provider. One per provider. */
 export const apiKeySecretName = (provider: string): string => `model.apiKey.${provider}`;
 
@@ -121,6 +129,14 @@ export interface ModelCatalogue {
   readonly selected: ModelDescriptor | null;
   /** Rendered exactly as the trace will show it (spec §9). */
   readonly selectedName: string | null;
+  /**
+   * The embedding model, selected separately and never implied by the chat choice
+   * (invariant §1.6). Null means the semantic path is unavailable.
+   */
+  readonly selectedEmbedding: ModelDescriptor | null;
+  readonly selectedEmbeddingName: string | null;
+  /** Detected models that look like embedders, offered for the embedding slot. */
+  readonly embeddingCandidates: readonly ModelDescriptor[];
 }
 
 /** Bounded so a preview of a billion-row Parquet cannot be turned into a full scan. */
@@ -165,6 +181,7 @@ export class Datera {
 
     const catalog = new Catalog(engine);
     await catalog.migrate();
+    await migrateEmbeddings(engine);
 
     const datera = new Datera(
       engine,
@@ -635,11 +652,115 @@ export class Datera {
     }
 
     const selected = await this.selectedChatModelDescriptor();
+    const selectedEmbedding = await this.selectedEmbeddingDescriptor();
+
+    const embeddingCandidates = detected
+      .flatMap((r) => r.models)
+      .filter((m) => looksLikeEmbeddingModel(m.id))
+      .map((m) => ({ ...m, role: 'embedding' as const }));
+
     return {
       detected,
       remote,
       selected,
       selectedName: selected === null ? null : describeModel(selected),
+      selectedEmbedding,
+      selectedEmbeddingName: selectedEmbedding === null ? null : describeModel(selectedEmbedding),
+      embeddingCandidates,
+    };
+  }
+
+  /**
+   * Choose the embedding model — always a separate act from choosing chat (§1.6).
+   *
+   * There is deliberately no fallback that picks a remote embedder because chat is
+   * remote: the structured path sends a model your schema, the semantic path sends it
+   * your *text*, and that difference should never be decided implicitly.
+   */
+  async setEmbeddingModel(descriptor: ModelDescriptor): Promise<void> {
+    await this.catalog.setSetting(EMBEDDING_MODEL_SETTING, JSON.stringify({ ...descriptor, role: 'embedding' }));
+    this.ports.logger.log('info', 'Embedding model selected', {
+      model: describeModel(descriptor),
+      locality: descriptor.locality,
+    });
+  }
+
+  private async selectedEmbeddingDescriptor(): Promise<ModelDescriptor | null> {
+    const raw = await this.catalog.getSetting(EMBEDDING_MODEL_SETTING);
+    if (raw === null) return null;
+    try {
+      return JSON.parse(raw) as ModelDescriptor;
+    } catch {
+      return null;
+    }
+  }
+
+  private async embeddingModel(): Promise<EmbeddingModel | null> {
+    const descriptor = await this.selectedEmbeddingDescriptor();
+    if (descriptor === null) return null;
+
+    const baseUrl =
+      descriptor.endpoint ?? (descriptor.provider === 'openai' ? 'https://api.openai.com' : null);
+    if (baseUrl === null) return null;
+
+    const apiKey =
+      descriptor.locality === 'remote'
+        ? (await this.ports.secrets.get(apiKeySecretName(descriptor.provider))) ?? undefined
+        : undefined;
+
+    return new OpenAICompatibleEmbeddingModel({
+      http: this.http, baseUrl, modelId: descriptor.id, descriptor, apiKey,
+    });
+  }
+
+  // ------------------------------------------------------- semantic (§5, Phase 4)
+
+  /** Embed the dataset's text columns. Unchanged text is never re-embedded. */
+  async buildEmbeddings(datasetId: string): Promise<BuildResult> {
+    const dataset = await this.getDataset(datasetId);
+    const model = await this.embeddingModel();
+    if (model === null) {
+      throw new DateraError(
+        'MODEL_UNAVAILABLE',
+        'No embedding model is configured. Choose one in Models — a local embedder keeps your text on this machine.',
+        { datasetId },
+      );
+    }
+
+    const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
+    const dictionaries: SourceDictionary[] = [];
+    for (const source of (await this.listSources()).filter((s) => s.datasetId === datasetId)) {
+      dictionaries.push(await this.getDictionary(source.id));
+    }
+
+    return runBuildEmbeddings({
+      engine: this.engine,
+      model,
+      datasetId,
+      schemaName: dataset.schemaName,
+      schemas,
+      dictionaries,
+      makeId: this.makeId,
+      hash: simpleHash,
+    });
+  }
+
+  /** Closest embedded chunks to a phrase, scoped to one dataset. */
+  async semanticSearch(datasetId: string, text: string, k = 5): Promise<readonly SearchHit[]> {
+    await this.getDataset(datasetId);
+    const model = await this.embeddingModel();
+    if (model === null) return [];
+
+    const [vector] = await model.embed([text]);
+    if (vector === undefined) return [];
+    return searchVectors(this.engine, datasetId, vector, k);
+  }
+
+  async embeddingStatus(datasetId: string): Promise<{ chunks: number; columns: readonly string[] }> {
+    await this.getDataset(datasetId);
+    return {
+      chunks: await countEmbedded(this.engine, datasetId),
+      columns: await embeddedColumns(this.engine, datasetId),
     };
   }
 
@@ -727,7 +848,11 @@ export class Datera {
    * Everything about how the answer was produced comes back in `trace`. Datera declines
    * rather than guesses: see query/ask.ts for the three ways that happens.
    */
-  async ask(datasetId: string, question: string): Promise<AskResult> {
+  async ask(
+    datasetId: string,
+    question: string,
+    options: { readonly topK?: number } = {},
+  ): Promise<AskResult> {
     const dataset = await this.getDataset(datasetId);
     const model = await this.chatModel();
 
@@ -755,6 +880,10 @@ export class Datera {
       schemas,
       dictionaries,
       relationships,
+      embeddingModel: await this.embeddingModel(),
+      embeddedColumns: await embeddedColumns(this.engine, datasetId),
+      search: async (vector, k) => searchVectors(this.engine, datasetId, vector, k),
+      ...(options.topK === undefined ? {} : { topK: options.topK }),
       question,
       traceId: this.makeId(),
       now: () => this.ports.clock.now(),
@@ -1099,3 +1228,19 @@ const KNOWN_REMOTE_MODELS: Readonly<Record<string, readonly string[]>> = {
   anthropic: ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
   openai: ['gpt-4o', 'gpt-4o-mini'],
 };
+
+
+/**
+ * A short content hash for "has this text already been embedded".
+ *
+ * FNV-1a rather than sha-256 because the core has no crypto port: this is a cache key, not
+ * a security boundary, and a collision costs a redundant re-embed.
+ */
+function simpleHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${hash.toString(16)}-${text.length}`;
+}

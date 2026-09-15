@@ -99,11 +99,13 @@ describe('P1-18/P1-19 Electron shell', () => {
     // Asserted exactly, not as a subset: the bridge is the renderer's entire reach into
     // the main process, so an accidental addition should fail here and be looked at.
     expect(probe.bridgeKeys).toEqual([
-      'addSource', 'ask', 'clearApiKey', 'confirmColumn', 'confirmEntity',
+      'addSource', 'ask', 'buildEmbeddings', 'clearApiKey', 'confirmColumn', 'confirmEntity',
       'confirmRelationship', 'createDataset', 'detectRelationships', 'draftDictionary',
-      'engineInfo', 'explainTouched', 'getDictionary', 'getSchema', 'hasApiKey',
+      'embeddingStatus', 'engineInfo', 'explainTouched', 'getDictionary', 'getSchema',
+      'hasApiKey',
       'listDatasets', 'listModels', 'listRelationships', 'listSources', 'pickFiles',
-      'preview', 'query', 'removeSource', 'setApiKey', 'setChatModel',
+      'preview', 'query', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',
+      'setEmbeddingModel',
     ]);
   });
 
