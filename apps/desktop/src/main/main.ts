@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell } from 'electron';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -325,7 +325,28 @@ function createWindow(): void {
   });
 }
 
+/**
+ * The Dock icon, on macOS, for an unpackaged run.
+ *
+ * macOS ignores `BrowserWindow.icon` and reads the Dock icon from the app bundle. Running
+ * `electron .` means the bundle is Electron's own, so the Dock showed the atom no matter
+ * what the window or electron-builder said. A packaged build takes icon.icns and needs
+ * none of this; this is purely so development and the shipped app look the same.
+ */
+function setDockIcon(): void {
+  if (process.platform !== 'darwin' || app.dock === undefined) return;
+
+  const image = nativeImage.createFromPath(join(appRoot, 'build', 'icon.png'));
+  if (image.isEmpty()) return;
+
+  app.dock.setIcon(image);
+  // Read back by the identity test: there is no getter for the Dock icon.
+  (app as unknown as { dockIconSet?: boolean }).dockIconSet = true;
+}
+
 app.whenReady().then(async () => {
+  setDockIcon();
+
   // A local-first tool has no reason to let its own UI reach the network. This is defence
   // in depth for invariant §1.6, not the mechanism: the engine's extension handling is.
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {

@@ -97,6 +97,16 @@ describe('application identity', () => {
     expect(gradient.length).toBeGreaterThan(0);
   });
 
+  it('sets the Dock icon, so an unpackaged run is not the Electron atom', async () => {
+    // macOS ignores BrowserWindow.icon entirely and takes the Dock icon from the app
+    // bundle — which, for `electron .`, is Electron's own. app.dock.setIcon is the only
+    // thing that corrects it, and it was the last place still showing the wrong logo.
+    const set = await app.evaluate(async ({ app: electronApp }) =>
+      (electronApp as { dockIconSet?: boolean }).dockIconSet === true,
+    );
+    expect(set).toBe(true);
+  });
+
   it('ships an icon in every format its three platforms need', async () => {
     // macOS reads .icns, Windows .ico, Linux .png, and electron-builder silently falls
     // back to the Electron default for whichever is missing — a failure that shows up
