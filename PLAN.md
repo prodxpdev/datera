@@ -1,6 +1,6 @@
 # Datera — build plan
 
-Status: **approved 2026-09-15. Phase 1 (P1-01 … P1-19) is in build.** Later phases remain proposals.
+Status: **all nine phases built and tested, 2026-09-15.** 381 tests pass; 6 skip without database containers. See §J for what was delivered per epic and the one gap that remains.
 
 Governing document: [`DATERA-BUILD-SPEC.md`](./DATERA-BUILD-SPEC.md). Where this plan and the
 spec disagree, the spec wins and this plan is wrong. UX reference: `datera-app-prototype.html`.
@@ -691,3 +691,62 @@ Datera: in. Datera as a general log platform: out.**
 **I-7 — Teaching payoff.** After a week, a student can search their own query history: what went
 semantic versus SQL, what the model cost, where the slow ones spent their time. The single trace
 teaches one request; the log viewer shows patterns across many.
+
+
+---
+
+## J. Delivered — all nine phases
+
+Built in order, test-first from Phase 2 onward. Each phase committed separately with its
+acceptance criteria reported honestly.
+
+| Epic | Acceptance | State |
+|---|---|---|
+| 1 Core foundation | §12.1 byte-identity across every format | ✅ with a negative control |
+| 2 Querying + transparency | §12.2 cited SQL, no rows to model · §12.3 flag not fabricate | ✅ |
+| | §12.8 bundled model, no key, no egress | ❌ **tier 1 not built** — [#32](https://github.com/prodxpdev/datera/issues/32) |
+| 3 Datasets + dictionary | §12.4 cross-dataset join blocked · §1.3 propose-then-confirm | ✅ |
+| 4 Semantic path | §12.5 routing per fixture · top-k only to the model | ✅ |
+| 5 Copy-on-write | §12.6 derived dataset, source untouched · §12.11 lossless round trip | ✅ |
+| 6 Writes | §12.7 never without confirm · exact counts · undo | ✅ |
+| 7 Serve | §12.9 complete trace · §12.9a bounded searchable log | ✅ |
+| 8 Server + deploy | §12.10 standalone **and** same interface drives a remote | ✅ client half |
+| 9 Teaching module | curated lifecycle, authorable without a code change | ✅ |
+
+### The one gap
+
+**§12.8 is not met.** The bundled local model does not exist: no weights ship, no local
+inference runs. Everything around it does — the three-tier architecture, selection,
+persistence, exact model naming in traces, cost accounting — so adding it is one new
+`ChatModel` implementation. The offline half of §12.8 *is* met and tested: the core cannot
+reach the network unless a host hands it an `HttpPort`, and the whole connect path runs with
+egress blocked.
+
+### Deliberately not built here
+
+**Datera Server** (Epic 8's substance). Auth, per-token and per-dataset scoping, deploy
+orchestration, licence enforcement and tenant isolation belong to the private repo by §2.
+A test now fails if any of those concerns appear in this repository, with a negative control
+proving the check works.
+
+### Bugs found by tests that would otherwise have shipped
+
+Recorded because they are the argument for the approach, not decoration:
+
+1. **A credential leak** — DuckDB echoes the connection string, password included, in ATTACH
+   failures; it flowed into error messages and would have reached logs and UI toasts.
+2. **`DELETE` reported as "no SQL produced"** — the extractor filtered writes out, hiding the
+   §6 teaching moment entirely.
+3. **Extension resolution** wrong outside the test harness, because the test pinned the
+   variable it was meant to exercise. The app silently loaded no extensions.
+4. **Layout overflow** unreachable, not merely ugly — `1fr` refusing to shrink while the page
+   did not scroll.
+5. **Retention pruning** compared an injected clock against DuckDB's, deleting everything.
+6. **Guard ordering**, twice — a write reported as a scoping failure, and a cross-dataset
+   write reported as a bind failure.
+
+### Follow-ups filed
+
+- [#31](https://github.com/prodxpdev/datera/issues/31) — XLSX sheet enumeration (DuckDB exposes no sheet-listing function)
+- [#32](https://github.com/prodxpdev/datera/issues/32) — the bundled local model
+- [#33](https://github.com/prodxpdev/datera/issues/33) — cold local models: 45s with no feedback, and a flat timeout that a 32b model exceeds

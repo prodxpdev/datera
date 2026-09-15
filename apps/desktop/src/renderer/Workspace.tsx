@@ -13,6 +13,7 @@ import { Models } from './Models.js';
 import { Dictionary } from './Dictionary.js';
 import { Serve } from './Serve.js';
 import { Environments } from './Environments.js';
+import { Learn } from './Learn.js';
 
 /**
  * P1-17 — the Workspace view.
@@ -54,7 +55,7 @@ const NAV: readonly NavItem[] = [
   { id: 'dictionary', icon: '⌗', label: 'Dictionary', enabled: true, title: 'Dictionary', subtitle: 'what your columns mean — the layer NL and search use' },
   { id: 'serve', icon: '⇄', label: 'Serve · API/MCP', enabled: true, title: 'Serve', subtitle: 'tools, connect configs, and the traffic log' },
   { id: 'environments', icon: '☁', label: 'Environments', enabled: true, title: 'Environments', subtitle: 'local, and deployed Datera Servers' },
-  { id: 'learn', icon: '◎', label: 'Learn', enabled: false, title: 'Learn', subtitle: 'Phase 9' },
+  { id: 'learn', icon: '◎', label: 'Learn', enabled: true, title: 'Learn', subtitle: 'how a value moves through the whole stack' },
 ];
 
 const PAGE_SIZE = 50;
@@ -220,6 +221,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           {nav === 'dictionary' && <Dictionary api={api} sources={loaded.sources} />}
           {nav === 'serve' && <Serve api={api} />}
           {nav === 'environments' && <Environments api={api} datasets={loaded.datasets} />}
+          {nav === 'learn' && <Learn api={api} />}
 
           {nav === 'workspace' && (loaded.sources.length === 0 ? (
             <div className="empty">

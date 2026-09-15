@@ -60,6 +60,9 @@ const IPC = {
   removeEnvironment: 'datera:removeEnvironment',
   pushDataset: 'datera:pushDataset',
   remoteQuery: 'datera:remoteQuery',
+  getLifecycle: 'datera:getLifecycle',
+  setLifecycle: 'datera:setLifecycle',
+  resetLifecycle: 'datera:resetLifecycle',
 } as const;
 
 const call = (channel: string, ...args: unknown[]): Promise<unknown> =>
@@ -109,4 +112,7 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   removeEnvironment: (id: string) => call(IPC.removeEnvironment, id),
   pushDataset: (datasetId: string, envId: string) => call(IPC.pushDataset, datasetId, envId),
   remoteQuery: (envId: string, datasetId: string, sql: string) => call(IPC.remoteQuery, envId, datasetId, sql),
+  getLifecycle: () => call(IPC.getLifecycle),
+  setLifecycle: (lifecycle: unknown) => call(IPC.setLifecycle, lifecycle),
+  resetLifecycle: () => call(IPC.resetLifecycle),
 });

@@ -67,6 +67,7 @@ import {
   type Environment, type EnvironmentStatus,
 } from './environments/types.js';
 import { RemoteDatera } from './environments/remote.js';
+import { DEFAULT_LIFECYCLE, validateLifecycle, type Lifecycle } from './teaching/lifecycle.js';
 import { connectConfig as buildConnectConfig, type ClientId, type ConnectConfig, type ConfigOptions } from './serve/configs.js';
 import {
   DEFAULT_RETENTION, migrateTraceLog, pruneTraceLog as prune, queryTraceLog as runTraceQuery,
@@ -153,6 +154,7 @@ const EMBEDDING_MODEL_SETTING = 'model.embedding';
 const TRACE_PAYLOADS_SETTING = 'trace.capturePayloads';
 const TRACE_RETENTION_SETTING = 'trace.retention';
 const ENVIRONMENTS_SETTING = 'environments';
+const LIFECYCLE_SETTING = 'teaching.lifecycle';
 
 /** What a served tool call returns, in the shape MCP expects. */
 export interface ToolResult {
@@ -2113,6 +2115,35 @@ export class Datera {
     }
 
     return { manifest: JSON.stringify(exported.manifest), tables };
+  }
+
+  // ------------------------------------------------------ teaching (§11.9)
+
+  /** The curated lifecycle, or the shipped default. */
+  async getLifecycle(): Promise<Lifecycle> {
+    const raw = await this.catalog.getSetting(LIFECYCLE_SETTING);
+    if (raw === null) return DEFAULT_LIFECYCLE;
+    try {
+      return { source: 'curated', ...(JSON.parse(raw) as Lifecycle) };
+    } catch {
+      return DEFAULT_LIFECYCLE;
+    }
+  }
+
+  /**
+   * Define a lifecycle. This is the "authorable without a code change" criterion —
+   * an instructor writes their own and it takes effect immediately.
+   */
+  async setLifecycle(lifecycle: Lifecycle): Promise<void> {
+    validateLifecycle(lifecycle);
+    await this.catalog.setSetting(
+      LIFECYCLE_SETTING,
+      JSON.stringify({ ...lifecycle, source: 'curated' }),
+    );
+  }
+
+  async resetLifecycle(): Promise<void> {
+    await this.catalog.setSetting(LIFECYCLE_SETTING, JSON.stringify(DEFAULT_LIFECYCLE));
   }
 
   // --------------------------------------------------------------- authoring

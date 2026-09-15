@@ -112,6 +112,7 @@ describe('P1-18/P1-19 Electron shell', () => {
         'setEmbeddingModel', 'setTracePayloadCapture', 'setTraceRetention',
         'addEnvironment', 'environmentStatuses', 'listEnvironments', 'pushDataset',
         'remoteQuery', 'removeEnvironment',
+        'getLifecycle', 'setLifecycle', 'resetLifecycle',
       ].sort(),
     );
   });

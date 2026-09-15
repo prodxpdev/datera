@@ -12,6 +12,7 @@ import type {
   RetentionPolicy,
   Environment,
   EnvironmentStatus,
+  Lifecycle,
   AuthoredRelationship,
   ColumnDefinition,
   EntityDefinition,
@@ -94,6 +95,11 @@ export interface DateraApi {
   removeEnvironment(id: string): Promise<void>;
   pushDataset(datasetId: string, environmentId: string): Promise<{ ok: true; environment: string }>;
   remoteQuery(environmentId: string, datasetId: string, sql: string): Promise<unknown>;
+
+  // ---- Phase 9 -----------------------------------------------------------
+  getLifecycle(): Promise<Lifecycle>;
+  setLifecycle(lifecycle: Lifecycle): Promise<void>;
+  resetLifecycle(): Promise<void>;
 }
 
 /** IPC channel names. Exported so main and preload cannot drift apart silently. */
@@ -141,6 +147,9 @@ export const IPC = {
   removeEnvironment: 'datera:removeEnvironment',
   pushDataset: 'datera:pushDataset',
   remoteQuery: 'datera:remoteQuery',
+  getLifecycle: 'datera:getLifecycle',
+  setLifecycle: 'datera:setLifecycle',
+  resetLifecycle: 'datera:resetLifecycle',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

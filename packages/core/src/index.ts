@@ -150,6 +150,10 @@ export type { Environment, EnvironmentStatus, EnvironmentKind } from './environm
 export { LOCAL_ENVIRONMENT_ID, environmentTokenKey } from './environments/types.js';
 export { RemoteDatera } from './environments/remote.js';
 export type { RemoteQueryResult } from './environments/remote.js';
+
+// ----------------------------------------------------------- teaching (§11.9)
+export { DEFAULT_LIFECYCLE, validateLifecycle } from './teaching/lifecycle.js';
+export type { Lifecycle, LifecycleLayer, LifecycleTransform, LifecycleLane } from './teaching/lifecycle.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
 export type { ModelCatalogue } from './datera.js';

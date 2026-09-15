@@ -162,6 +162,9 @@ function registerHandlers(): void {
   handle(IPC.addEnvironment, async (input: never) => core().addEnvironment(input));
   handle(IPC.removeEnvironment, async (id: string) => core().removeEnvironment(id));
   handle(IPC.pushDataset, async (datasetId: string, envId: string) => core().pushDataset(datasetId, envId));
+  handle(IPC.getLifecycle, async () => core().getLifecycle());
+  handle(IPC.setLifecycle, async (lifecycle: never) => core().setLifecycle(lifecycle));
+  handle(IPC.resetLifecycle, async () => core().resetLifecycle());
   handle(IPC.remoteQuery, async (envId: string, datasetId: string, sql: string) => {
     const client = await core().connectTo(envId);
     return client.query(datasetId, sql);

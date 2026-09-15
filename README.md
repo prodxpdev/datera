@@ -13,48 +13,59 @@ is a separate, private repository.
 
 ---
 
-## Status — Phases 1 and 2 built
+## Status — all nine phases built
 
-**Phase 1** — the portable core, DuckDB embedded, read-only connect and ingest of the
-DuckDB-native formats, schema introspection with inferred types, and the Electron Workspace shell.
+Every phase of the build sequence (spec §11) is implemented and tested. **381 tests pass**,
+6 skip without database containers.
 
-**Phase 2** — NL→SQL with visible cited SQL, the query glass box (parse → route → schema →
-model → SQL → guard → rows → cost), a direct SQL editor on the same guard, and the spec §9
-three-tier model system with keys in the OS keychain.
+| Phase | What it is | State |
+|---|---|---|
+| 1 | Portable core, DuckDB, read-only connect + ingest, Workspace shell | ✅ |
+| 2 | NL→SQL, the glass box, §9 three-tier models | ✅ except the bundled model — [#32](https://github.com/prodxpdev/datera/issues/32) |
+| 3 | Datasets, the enforced boundary, relationships, dictionary, "what it touched" | ✅ |
+| 4 | Embeddings, vector search, structured-vs-semantic routing | ✅ |
+| 5 | Copy-on-write, versions, normalize, enum promotion, portable export | ✅ |
+| 6 | Gated writes: propose → preview → confirm → undo | ✅ |
+| 7 | Serve over MCP (stdio + HTTP) and REST; the persisted trace log | ✅ |
+| 8 | Environments, remote client, push — **client half only** | ✅ |
+| 9 | The data-lifecycle teaching module | ✅ |
 
-**One part of Phase 2 is not built: the bundled local model (tier 1).** The provider
-architecture, selection, trace and cost accounting are all in place and tested, but no weights
-ship and no inference runs locally — so out of the box, with no model configured, Ask reports
-`MODEL_UNAVAILABLE` rather than answering. Tiers 2 and 3 work today. See
-[the Phase 2 gap](#the-phase-2-gap-the-bundled-model) below.
+**Phase 8's server is not here and will not be.** `datera-server` — auth, per-token and
+per-dataset scoping, deploy orchestration, licence enforcement, tenant isolation — is a
+separate private repository (spec §2). What this repo contains is the client's ability to
+drive one, and a test that fails if server-proprietary concerns appear here.
 
-**Not built at all:** dictionary, semantic search, copy-on-write, versions, normalize, writes,
-MCP/REST serving, Datera Server. Those nav items are visible but disabled in the app,
-deliberately — see [`PLAN.md`](./PLAN.md).
+### The one real gap
 
-| | |
-|---|---|
-| **Plan of record** | [`PLAN.md`](./PLAN.md) |
-| **Source of truth** | [`DATERA-BUILD-SPEC.md`](./DATERA-BUILD-SPEC.md) |
-| **Tickets** | GitHub issues, one epic per phase |
-| **UX reference** | `datera-app-prototype.html` |
-
----
+**The bundled local model (spec §9 tier 1) is not implemented.** The provider architecture,
+selection, trace naming and cost accounting are all in place and tested, but no weights ship
+and no local inference runs. With nothing configured, Ask says so rather than failing
+obscurely. Tiers 2 and 3 — a detected local runtime such as Ollama, or your own API key —
+both work today. See [#32](https://github.com/prodxpdev/datera/issues/32).
 
 ## Repository layout
 
 ```
 packages/core/          @datera/core — the portable engine. No desktop or server dependencies.
-packages/node-runtime/  Node implementations of the core's ports (DuckDB driver, fs, clock, logger).
+packages/node-runtime/  Node implementations of the core's ports (DuckDB driver, fs, http, clock).
+packages/cli/           The `datera` binary — MCP over stdio and HTTP, plus REST.
 packages/testkit/       Fixtures, the byte-identity harness, the egress guard, fake ports.
 apps/desktop/           The Electron client — a thin host over the core.
 scripts/                Extension staging.
 fixtures/generated/     Test fixtures, generated rather than committed.
 ```
 
-`packages/cli` is **reserved but not yet created** — the `datera --mcp --workspace …` binary (spec
-§8) is a third host over the core and arrives in Phase 7. It is named here so it does not get
-smuggled into `apps/desktop`.
+`packages/cli` is the `datera` binary — a third host over the core, serving MCP over stdio and
+HTTP plus a small REST surface:
+
+```bash
+datera --mcp --workspace ~/data                    # stdio, for Claude Desktop / Cursor
+datera --http 7391 --workspace ~/data              # local HTTP
+datera --http 7391 --host 0.0.0.0 --token <token>  # reachable; a token is required
+```
+
+It refuses to bind beyond loopback without a token, and receiving pushed datasets is a separate
+opt-in (`--allow-push`).
 
 ### The seam that matters
 
@@ -76,7 +87,7 @@ Requires Node ≥ 20 and pnpm 10.
 ```bash
 pnpm install              # also stages DuckDB extensions (see below)
 pnpm exec tsc -b          # build all packages
-pnpm test                 # full suite: 125 pass, 6 skip without databases
+pnpm test                 # full suite: 381 pass, 6 skip without databases
 ```
 
 ### Run the app
@@ -167,16 +178,19 @@ Eight non-negotiables (spec §1). Phase 1 implements and tests the ones it touch
 
 1. **Read-only by default** — enforced two independent ways: a statement guard using DuckDB's own
    parser, and `READ_ONLY` on every attach.
-2. **Copy-on-write** — the source is sacred. Phase 5.
-3. **The model proposes; a human confirms** — Phase 3 onward.
+2. **Copy-on-write** — the source is sacred. Derived datasets hold real tables; writes only
+   ever land there, and a connected dataset cannot be granted writes at all.
+3. **The model proposes; a human confirms** — relationships, dictionary entries,
+   normalization splits and every write. Only *confirmed* definitions reach a model.
 4. **Show the work** — Phase 1 ships the beginning: how each source was parsed is recorded and
    displayed, including a warning when DuckDB's CSV sniffer falls back to a bogus delimiter.
 5. **Deterministic where facts matter** — row counts, null counts and type inference are computed
    from the data, never guessed.
-6. **BYO-key with a bundled local default** — Phase 2. Phase 1 keeps the path clear: no network.
-7. **Portable core** — enforced by test.
-8. **No lock-in, and it's provable** — "delete Datera and your artifact still runs." Tested from
-   Phase 5, where the exports it covers first exist.
+6. **BYO-key with a bundled local default** — tiers 2 and 3 work; tier 1 is the open gap.
+   Embeddings are chosen separately and never follow the chat model.
+7. **Portable core** — enforced by test, with a negative control.
+8. **No lock-in, and it's provable** — export data, schema, dictionary and dataset definition
+   in open formats, and re-import losslessly into a clean instance. Tested, not asserted.
 
 ---
 

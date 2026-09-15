@@ -38,6 +38,7 @@ const METHODS = [
   'setTraceRetention', 'getTracePayloadCapture', 'setTracePayloadCapture', 'pruneTraceLog',
   'listEnvironments', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
   'pushDataset', 'remoteQuery',
+  'getLifecycle', 'setLifecycle', 'resetLifecycle',
 ] as const;
 
 export function createApi(bridge: Bridge): DateraApi {
