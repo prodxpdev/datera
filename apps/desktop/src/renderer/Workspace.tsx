@@ -14,6 +14,7 @@ import { Learn } from './Learn.js';
 import { Shape } from './Shape.js';
 import { Edit } from './Edit.js';
 import { Settings } from './Settings.js';
+import { Mark } from './Brand.js';
 
 /**
  * The application shell.
@@ -230,7 +231,7 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand"><span className="m" /><span className="bt">Datera</span></div>
+        <div className="brand"><Mark /><span className="bt">Datera</span></div>
         <div className="grp">Client</div>
         {NAV.map((item) => (
           <div

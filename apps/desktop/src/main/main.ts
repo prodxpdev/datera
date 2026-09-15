@@ -306,6 +306,9 @@ function createWindow(): void {
     minHeight: 600,
     backgroundColor: '#fbfcfd',
     title: 'Datera',
+    // macOS takes the icon from the bundle; Windows and Linux take it from the window,
+    // and a dev run on either shows the Electron default without this.
+    icon: join(appRoot, 'build', 'icon.png'),
     webPreferences: {
       // The three that matter. The renderer is a browser context with no Node, no direct
       // access to the core, and no ability to reach anything except the preload bridge.

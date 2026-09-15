@@ -12,7 +12,10 @@
 /* sidebar */
 .side { border-right: 1px solid var(--line); background: #f6f7f9; display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; padding: 16px 15px 12px; letter-spacing: -.01em; }
-.brand .m { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(135deg, var(--indigo), #7c74f0); }
+/* The mark ships as SVG now (see Brand.tsx); this only sizes it. The gradient square
+   that used to live here was an approximation of the kit, which is how a shipped app
+   drifts away from the identity it was designed with. */
+.brand .mark { display: block; flex: 0 0 auto; }
 .grp { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink3); padding: 10px 15px 5px; }
 .nav { display: flex; align-items: center; gap: 10px; padding: 7px 15px; font-size: 13.5px; color: var(--ink2); cursor: default; }
 .nav.on { background: var(--indigo-bg); color: var(--indigo); font-weight: 600; }

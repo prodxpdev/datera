@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="icon" type="image/svg+xml" href="brand/svg/datera-favicon.svg"/>
 <title>Datera — own your backend, host it anywhere, see how it all works</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,8 +27,7 @@ a{color:inherit}button{font-family:inherit;cursor:pointer}
 .nav{position:sticky;top:0;z-index:20;background:rgba(251,252,253,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .nav .in{display:flex;align-items:center;gap:20px;height:60px;max-width:1040px;margin:0 auto;padding:0 24px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:18px;letter-spacing:-.01em}
-.brand .m{width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,var(--indigo),#7c74f0);position:relative}
-.brand .m::after{content:"";position:absolute;inset:5px 5px auto auto;width:6px;height:6px;border-radius:2px;background:rgba(255,255,255,.7)}
+.brand .m{width:20px;height:20px;display:block;flex:0 0 auto}
 .nav .lk{margin-left:auto;display:flex;gap:22px;font-size:14px;color:var(--ink2);font-weight:500;align-items:center}
 .nav .lk a:hover{color:var(--ink)}
 .nav .gh{font-family:var(--mono);font-size:12.5px;border:1px solid var(--line2);border-radius:8px;padding:6px 11px;color:var(--ink2)}
@@ -142,7 +142,7 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:30px 0;color:var
 <body>
 
 <nav class="nav"><div class="in">
-  <div class="brand"><span class="m"></span>Datera</div>
+  <div class="brand"><svg class="m" viewBox="0 0 100 100" role="img" aria-label="Datera"><defs><linearGradient id="dtrm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient><linearGradient id="dtrg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="26" fill="url(#dtrm)"/><rect x="2" y="2" width="96" height="96" rx="26" fill="url(#dtrg)"/><rect x="24" y="30" width="52" height="11" rx="5.5" fill="#fff" opacity=".95"/><rect x="24" y="47" width="40" height="11" rx="5.5" fill="#fff" opacity=".66"/><rect x="24" y="64" width="28" height="11" rx="5.5" fill="#fff" opacity=".42"/></svg>Datera</div>
   <div class="lk">
     <a href="#own">Own it</a>
     <a href="#how">How it works</a>

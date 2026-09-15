@@ -87,6 +87,33 @@ describe('application identity', () => {
     expect(about.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it('shows the Datera mark in the sidebar, not a stand-in shape', async () => {
+    // The brand block held a CSS gradient square that only resembled the mark. Close
+    // enough is how a shipped app quietly stops matching the kit it was designed from.
+    const mark = await page.$('.brand svg');
+    expect(mark).not.toBeNull();
+
+    const gradient = await page.$eval('.brand svg', (el) => el.querySelector('linearGradient')?.id ?? '');
+    expect(gradient.length).toBeGreaterThan(0);
+  });
+
+  it('ships an icon in every format its three platforms need', async () => {
+    // macOS reads .icns, Windows .ico, Linux .png, and electron-builder silently falls
+    // back to the Electron default for whichever is missing — a failure that shows up
+    // only in a release artifact nobody opens until later.
+    for (const file of ['icon.icns', 'icon.ico', 'icon.png']) {
+      const bytes = await readFile(join(appRoot, 'build', file));
+      expect(bytes.byteLength).toBeGreaterThan(1000);
+    }
+  });
+
+  it('points electron-builder at that icon directory', async () => {
+    const manifest = JSON.parse(await readFile(join(appRoot, 'package.json'), 'utf8')) as {
+      build?: { directories?: { buildResources?: string } };
+    };
+    expect(manifest.build?.directories?.buildResources).toBe('build');
+  });
+
   it('declares a productName so packaged builds carry the same name', async () => {
     // app.setName() fixes the running process. The *packaged* bundle takes its name from
     // electron-builder's productName, and nothing at runtime can correct that — so the
