@@ -68,10 +68,33 @@ Requires Node ≥ 20 and pnpm 10.
 ```bash
 pnpm install              # also stages DuckDB extensions (see below)
 pnpm exec tsc -b          # build all packages
-pnpm test                 # full suite
+pnpm test                 # full suite: 125 pass, 6 skip without databases
+```
+
+### Run the app
+
+```bash
 pnpm --filter @datera/desktop run build
 pnpm --filter @datera/desktop run start
 ```
+
+Click **+ Connect data** and pick any CSV, TSV, JSON, Parquet, `.xlsx`, or `.sqlite` file —
+your own, or the ones in `fixtures/generated/` after a test run. You get the source list,
+the schema with types and null counts, a paged preview, and a **How this source was read**
+panel showing exactly what the parser decided.
+
+Your workspace lives in the OS app-data directory and persists between launches. Set
+`DATERA_WORKSPACE=/some/path` to put it somewhere else.
+
+### Poke the core without the app
+
+```bash
+pnpm run try fixtures/generated/orders.csv fixtures/generated/customers.sqlite
+```
+
+Prints the schema, inference warnings and first rows for each source, then demonstrates the
+read-only guard refusing a `DELETE`, a `COPY … TO`, and a statement batch hiding a `DROP`.
+Uses a throwaway workspace and never touches your files.
 
 ### DuckDB extensions are staged, never fetched at query time
 

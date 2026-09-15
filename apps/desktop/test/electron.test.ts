@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
-import { fixturePaths, fingerprintFile, stagedExtensionDirectory, type FixturePaths } from '@datera/testkit';
+import { fixturePaths, fingerprintFile, type FixturePaths } from '@datera/testkit';
 
 /**
  * P1-18 + P1-19 — the Electron shell, driven for real.
@@ -34,8 +34,10 @@ describe('P1-18/P1-19 Electron shell', () => {
       env: {
         ...process.env,
         DATERA_WORKSPACE: workspacePath,
-        DATERA_EXTENSION_DIR: stagedExtensionDirectory(),
-        // Headless Linux CI has no GPU and no keyring; neither is what these tests are about.
+        // DATERA_EXTENSION_DIR is deliberately NOT set. Setting it here once hid a real
+        // bug: the app's own resolution guessed <appRoot>/vendor, which does not exist in
+        // a workspace layout, so a normally-launched app loaded no extensions at all. A
+        // test that pins the thing it is meant to exercise is not testing it.
         ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
       },
     });
@@ -62,6 +64,24 @@ describe('P1-18/P1-19 Electron shell', () => {
     const engineFooter = await page.textContent('.side .foot');
     expect(engineFooter).toContain('DuckDB v');
     expect(engineFooter).toContain('duckdb-node-api');
+  });
+
+  it('finds and loads its staged extensions without being told where they are', async () => {
+    // Regression guard. The app resolves the extension directory itself here — no
+    // DATERA_EXTENSION_DIR — because that is what happens when a person launches it.
+    // Without every extension loaded, .xlsx and SQLite are unavailable.
+    const extensions = await page.evaluate(async () => {
+      const api = (globalThis as unknown as {
+        datera: { engineInfo(): Promise<{ extensions: { name: string; loaded: boolean }[] }> };
+      }).datera;
+      const info = await api.engineInfo();
+      return info.extensions.filter((e) => e.loaded).map((e) => e.name);
+    });
+
+    expect(extensions).toContain('excel');
+    expect(extensions).toContain('sqlite_scanner');
+    expect(extensions).toContain('postgres_scanner');
+    expect(extensions).toContain('mysql_scanner');
   });
 
   it('isolates the renderer from Node and from the core', async () => {
