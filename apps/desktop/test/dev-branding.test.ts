@@ -1,0 +1,72 @@
+import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+/**
+ * The development Electron bundle carries Datera's name and icon.
+ *
+ * A packaged build gets its own bundle and is right by construction. `electron .` runs
+ * inside the Electron binary's bundle, whose Info.plist says "Electron" — that is what
+ * the macOS Dock tile reads, and app.setName() cannot reach it. The menu bar and About
+ * panel were fixed long before the Dock was, which is exactly how this went unnoticed.
+ *
+ * Asserted rather than assumed because the patch lives in node_modules: a reinstall
+ * silently reverts it, and the only thing that makes that safe is the script being
+ * idempotent and run on every `dev`.
+ */
+const repoRoot = resolve(fileURLToPath(import.meta.url), '..', '..', '..', '..');
+const script = join(repoRoot, 'scripts/brand-dev-electron.mjs');
+
+function bundlePath(): string | null {
+  const require = createRequire(join(repoRoot, 'apps/desktop/package.json'));
+  const packageDir = dirname(require.resolve('electron/package.json'));
+  const pathFile = join(packageDir, 'path.txt');
+  if (!existsSync(pathFile)) return null;
+  const first = readFileSync(pathFile, 'utf8').trim().split('/')[0] ?? '';
+  const candidate = join(packageDir, 'dist', first);
+  return existsSync(candidate) ? candidate : null;
+}
+
+function plistValue(plist: string, key: string): string {
+  return execFileSync('plutil', ['-extract', key, 'raw', '-o', '-', plist], { encoding: 'utf8' }).trim();
+}
+
+describe.runIf(process.platform === 'darwin')('development bundle branding', () => {
+  const bundle = bundlePath();
+
+  it('names the dev bundle Datera, so the Dock tile matches the packaged app', () => {
+    expect(bundle).not.toBeNull();
+    execFileSync('node', [script], { encoding: 'utf8' });
+
+    const plist = join(bundle!, 'Contents', 'Info.plist');
+    expect(plistValue(plist, 'CFBundleName')).toBe('Datera');
+    expect(plistValue(plist, 'CFBundleDisplayName')).toBe('Datera');
+    expect(plistValue(plist, 'CFBundleIconFile')).toBe('datera.icns');
+    expect(existsSync(join(bundle!, 'Contents', 'Resources', 'datera.icns'))).toBe(true);
+  });
+
+  it('leaves the executable name alone', () => {
+    // The electron package's own path.txt points at this filename. Renaming it to fix a
+    // label would break the launcher.
+    const plist = join(bundle!, 'Contents', 'Info.plist');
+    expect(plistValue(plist, 'CFBundleExecutable')).toBe('Electron');
+    expect(existsSync(join(bundle!, 'Contents', 'MacOS', 'Electron'))).toBe(true);
+  });
+
+  it('is idempotent, because it runs on every dev launch', () => {
+    const second = execFileSync('node', [script], { encoding: 'utf8' });
+    expect(second).toMatch(/already branded/);
+  });
+
+  it('is wired into the scripts that launch the app', () => {
+    const manifest = JSON.parse(
+      readFileSync(join(repoRoot, 'apps/desktop/package.json'), 'utf8'),
+    ) as { scripts: Record<string, string> };
+
+    expect(manifest.scripts['dev']).toContain('brand-dev-electron');
+    expect(manifest.scripts['start']).toContain('brand-dev-electron');
+  });
+});
