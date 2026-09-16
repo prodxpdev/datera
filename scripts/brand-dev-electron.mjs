@@ -29,6 +29,17 @@ import { createRequire } from 'node:module';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const APP_NAME = 'Datera';
 const ICON = 'datera.icns';
+/**
+ * Its own identifier, not Electron's.
+ *
+ * LaunchServices keys records by bundle identifier, and every unpatched Electron.app on
+ * the machine claims `com.github.Electron`. With a collision it is free to resolve the
+ * name from whichever record it likes — which is why the Dock kept saying "Electron" even
+ * with this bundle's own record reading "Datera".
+ *
+ * `.dev` distinguishes it from the packaged app, so the two never shadow each other.
+ */
+const BUNDLE_ID = 'app.datera.desktop.dev';
 
 if (process.platform !== 'darwin') {
   console.log('brand-dev-electron: not macOS, nothing to do.');
@@ -51,7 +62,11 @@ const plist = join(bundle, 'Contents', 'Info.plist');
 const resources = join(bundle, 'Contents', 'Resources');
 const source = join(root, 'apps/desktop/build/icon.icns');
 
-if (readName() === APP_NAME && existsSync(join(resources, ICON))) {
+if (
+  readKey('CFBundleName') === APP_NAME &&
+  readKey('CFBundleIdentifier') === BUNDLE_ID &&
+  existsSync(join(resources, ICON))
+) {
   console.log(`brand-dev-electron: already branded (${bundle}).`);
   process.exit(0);
 }
@@ -61,9 +76,23 @@ for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
   execFileSync('plutil', ['-replace', key, '-string', APP_NAME, plist]);
 }
 execFileSync('plutil', ['-replace', 'CFBundleIconFile', '-string', ICON, plist]);
+execFileSync('plutil', ['-replace', 'CFBundleIdentifier', '-string', BUNDLE_ID, plist]);
 
 // The Dock caches by bundle path and mtime; touching the bundle is what makes it re-read.
 execFileSync('touch', [bundle]);
+
+// And LaunchServices caches independently of that, so it is told explicitly. Without
+// this the old record survives and the tile keeps the old name.
+const lsregister =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework' +
+  '/Support/lsregister';
+if (existsSync(lsregister)) {
+  try {
+    execFileSync(lsregister, ['-f', bundle], { stdio: 'ignore' });
+  } catch {
+    // Best effort: a stale tooltip is worth reporting, not worth failing a launch over.
+  }
+}
 
 console.log(`brand-dev-electron: branded ${bundle} as ${APP_NAME}.`);
 
@@ -88,9 +117,9 @@ function findBundle() {
   return existsSync(candidate) ? candidate : null;
 }
 
-function readName() {
+function readKey(key) {
   try {
-    return execFileSync('plutil', ['-extract', 'CFBundleName', 'raw', '-o', '-', plist], {
+    return execFileSync('plutil', ['-extract', key, 'raw', '-o', '-', plist], {
       encoding: 'utf8',
     }).trim();
   } catch {

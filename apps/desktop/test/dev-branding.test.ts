@@ -45,6 +45,12 @@ describe.runIf(process.platform === 'darwin')('development bundle branding', () 
     expect(plistValue(plist, 'CFBundleName')).toBe('Datera');
     expect(plistValue(plist, 'CFBundleDisplayName')).toBe('Datera');
     expect(plistValue(plist, 'CFBundleIconFile')).toBe('datera.icns');
+
+    // Its own identifier, not com.github.Electron. LaunchServices keys records by
+    // identifier, and every other unpatched Electron.app on a machine claims that one —
+    // with a collision the Dock is free to take the name from whichever record it likes,
+    // which is exactly what kept the tooltip saying "Electron" after the name was right.
+    expect(plistValue(plist, 'CFBundleIdentifier')).toBe('app.datera.desktop.dev');
     expect(existsSync(join(bundle!, 'Contents', 'Resources', 'datera.icns'))).toBe(true);
   });
 
