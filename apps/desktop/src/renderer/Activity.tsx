@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ToolDefinition, TraceRecord } from '@datera/core';
+import type { Dataset, ToolDefinition, TraceRecord } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
+import { Operations } from './Operations.js';
 
 /**
  * Activity — what agents can call, and every request that ran (spec §8, §8a).
@@ -13,9 +14,17 @@ import type { DateraApi } from '../shared/contract.js';
  * The log is a list over the same trace the answer drawer shows — one record is the glass
  * box, many records are a table over them. No second UI language, no second query stack.
  */
-type Tab = 'log' | 'tools';
+type Tab = 'log' | 'tools' | 'operations';
 
-export function Activity({ api }: { readonly api: DateraApi }): JSX.Element {
+export function Activity({
+  api,
+  datasets,
+  datasetId,
+}: {
+  readonly api: DateraApi;
+  readonly datasets: readonly Dataset[];
+  readonly datasetId: string;
+}): JSX.Element {
   const [tab, setTab] = useState<Tab>('log');
   const [tools, setTools] = useState<readonly ToolDefinition[]>([]);
   const [records, setRecords] = useState<readonly TraceRecord[]>([]);
@@ -41,7 +50,16 @@ export function Activity({ api }: { readonly api: DateraApi }): JSX.Element {
         <button data-serve="tools" className={tab === 'tools' ? 'on' : ''} onClick={() => setTab('tools')}>
           Tools ({tools.length})
         </button>
+        <button
+          data-serve="operations"
+          className={tab === 'operations' ? 'on' : ''}
+          onClick={() => setTab('operations')}
+        >
+          Operations
+        </button>
       </div>
+
+      {tab === 'operations' && <Operations api={api} datasets={datasets} datasetId={datasetId} />}
 
       {tab === 'tools' && (
         <>

@@ -61,7 +61,7 @@ const NAV: readonly NavItem[] = [
   // Kept as a destination rather than folded in as a tab. It is the product's stated
   // reason to exist in a classroom, and a tab gets clicked a fraction as often.
   { id: 'learn', icon: '◎', label: 'Learn', enabled: true, title: 'Learn', subtitle: 'how a value actually reaches the screen, and what breaks on the way' },
-  { id: 'activity', icon: '⇄', label: 'Activity', enabled: true, title: 'Activity', subtitle: 'what agents can call, and every request that ran' },
+  { id: 'activity', icon: '⇄', label: 'Activity', enabled: true, title: 'Activity', subtitle: 'what agents can call, what you have defined, and every request that ran' },
 ];
 
 const PAGE_SIZE = 50;
@@ -355,7 +355,9 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
 
           {nav === 'learn' && <Learn api={api} />}
 
-          {nav === 'activity' && <Activity api={api} />}
+          {nav === 'activity' && (
+            <Activity api={api} datasets={loaded.datasets} datasetId={activeId} />
+          )}
 
           {nav === 'data' && (
             <div className="subnav">

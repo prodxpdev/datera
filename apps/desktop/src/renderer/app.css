@@ -638,3 +638,21 @@
   text-transform: uppercase; background: var(--green-bg); color: var(--green);
   border: 1px solid var(--green-line); border-radius: 20px; padding: 1px 7px;
 }
+
+/* Authored operations. */
+.opcard { border: 1px solid var(--line); border-radius: 11px; padding: 13px 15px; margin-bottom: 11px; background: var(--card); min-width: 0; }
+.ophead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.opn { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+.opk { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; border-radius: 20px; padding: 2px 8px; }
+.opk.read { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-line); }
+.opk.write { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-line); }
+.opds { font-size: 11px; color: var(--ink3); }
+.ophead .linkbtn { margin-left: auto; }
+.opdesc { font-size: 12.5px; color: var(--ink2); margin-bottom: 7px; }
+.opargs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.paramlist { margin: 12px 0; display: grid; gap: 7px; }
+.paramrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-width: 0; }
+.paramrow input[type="text"], .paramrow input:not([type]) { flex: 1 1 180px; min-width: 0; border: 1px solid var(--line2); border-radius: 7px; padding: 4px 9px; font-family: inherit; font-size: 12.5px; }
+.paramrow select { border: 1px solid var(--line2); border-radius: 7px; padding: 4px 7px; font-size: 12px; font-family: var(--mono); }
+.operations textarea { width: 100%; min-height: 120px; border: 1px solid var(--line2); border-radius: 9px; padding: 11px 13px; font-family: var(--mono); font-size: 12.5px; resize: vertical; }
+.operations .pickrow input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line2); border-radius: 7px; padding: 5px 10px; font-family: inherit; font-size: 13px; }

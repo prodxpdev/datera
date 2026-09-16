@@ -1,4 +1,7 @@
 import type {
+  AuthoredOperation,
+  CreateOperationInput,
+  OperationResult,
   SchemaGraph,
   AddSourceRequest,
   AskResult,
@@ -97,6 +100,12 @@ export interface DateraApi {
 
   // ---- Phase 7 -----------------------------------------------------------
   listTools(): Promise<readonly ToolDefinition[]>;
+  createOperation(input: CreateOperationInput): Promise<AuthoredOperation>;
+  listOperations(datasetId?: string): Promise<readonly AuthoredOperation[]>;
+  deleteOperation(id: string): Promise<void>;
+  callOperation(
+    datasetId: string, name: string, args?: Record<string, unknown>,
+  ): Promise<OperationResult>;
   callTool(name: string, args: Record<string, unknown>): Promise<ToolResult>;
   connectConfig(client: ClientId, options?: { url?: string; token?: string }): Promise<ConnectConfig>;
   queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]>;
@@ -187,6 +196,10 @@ export const IPC = {
   semanticSearch: 'datera:semanticSearch',
   embeddingStatus: 'datera:embeddingStatus',
   listTools: 'datera:listTools',
+  createOperation: 'datera:createOperation',
+  listOperations: 'datera:listOperations',
+  deleteOperation: 'datera:deleteOperation',
+  callOperation: 'datera:callOperation',
   callTool: 'datera:callTool',
   connectConfig: 'datera:connectConfig',
   queryTraceLog: 'datera:queryTraceLog',

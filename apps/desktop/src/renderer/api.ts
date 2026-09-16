@@ -34,7 +34,7 @@ const METHODS = [
   'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',
   'explainTouched',
   'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',
-  'listTools', 'callTool', 'connectConfig', 'queryTraceLog', 'getTraceRetention',
+  'listTools', 'callTool', 'createOperation', 'listOperations', 'deleteOperation', 'callOperation', 'connectConfig', 'queryTraceLog', 'getTraceRetention',
   'setTraceRetention', 'getTracePayloadCapture', 'setTracePayloadCapture', 'pruneTraceLog',
   'listEnvironments', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
   'pushDataset', 'remoteQuery',

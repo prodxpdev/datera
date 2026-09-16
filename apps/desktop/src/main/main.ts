@@ -167,6 +167,12 @@ function registerHandlers(): void {
   );
   handle(IPC.embeddingStatus, async (datasetId: string) => core().embeddingStatus(datasetId));
   handle(IPC.listTools, async () => core().listTools());
+  handle(IPC.createOperation, async (input: never) => core().createOperation(input));
+  handle(IPC.listOperations, async (datasetId?: string) => core().listOperations(datasetId));
+  handle(IPC.deleteOperation, async (id: string) => core().deleteOperation(id));
+  handle(IPC.callOperation, async (datasetId: string, name: string, args?: never) =>
+    core().callOperation(datasetId, name, args ?? {}),
+  );
   handle(IPC.callTool, async (name: string, args: Record<string, unknown>) => core().callTool(name, args));
   handle(IPC.connectConfig, async (client: never, opts?: never) => core().connectConfig(client, opts ?? {}));
   handle(IPC.queryTraceLog, async (query: never) => core().queryTraceLog(query ?? {}));
