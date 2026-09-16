@@ -142,7 +142,7 @@ function registerHandlers(): void {
     }),
   );
   handle(IPC.removeBundledModel, async (modelId: string) => core().removeBundledModel(modelId));
-  handle(IPC.warmBundledModel, async () => core().warmBundledModel());
+  handle(IPC.warmChatModel, async () => core().warmChatModel());
   handle(IPC.setChatModel, async (model: ModelDescriptor) => core().setChatModel(model));
   handle(IPC.setApiKey, async (provider: string, key: string) => core().setApiKey(provider, key));
   handle(IPC.hasApiKey, async (provider: string) => core().hasApiKey(provider));
@@ -457,7 +457,7 @@ app.whenReady().then(async () => {
   // that pays for reading two gigabytes off disk. Deliberately after the window and not
   // awaited: the UI should be usable immediately, and a failure here costs only a slower
   // first answer.
-  void datera.warmBundledModel().catch(() => undefined);
+  void datera.warmChatModel().catch(() => undefined);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

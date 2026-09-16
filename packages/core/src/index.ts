@@ -127,6 +127,7 @@ export { assertWithinDataset, extractTableReferences } from './query/scope.js';
 export { summariseTouched } from './query/touched.js';
 export { completionsAt, referencedTables, starterSql } from './query/schema-graph.js';
 export { suggestQuestions } from './query/suggest.js';
+export { timeoutForModel, warmupRequestFor } from './models/latency.js';
 export { sheetNamesFrom } from './sources/workbook.js';
 export {
   ACTIVITY_DATASET_ID, ACTIVITY_DATASET_NAME, ACTIVITY_DATASET_SCHEMA,

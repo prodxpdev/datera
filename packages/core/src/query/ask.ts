@@ -3,6 +3,7 @@ import type { Engine } from '../engine/engine.js';
 import { assertReadOnlySql } from '../engine/read-only.js';
 import { assertWithinDataset } from './scope.js';
 import { describeModel, type ChatModel } from '../models/types.js';
+import { timeoutForModel } from '../models/latency.js';
 import type { SourceSchema } from '../schema/introspect.js';
 import type { SourceDictionary } from '../dictionary/types.js';
 import type { AuthoredRelationship } from '../datasets/authoring.js';
@@ -163,6 +164,9 @@ export async function ask(options: AskOptions): Promise<AskResult> {
       { role: 'user', content: userPrompt },
     ],
     temperature: 0,
+    // Local models get minutes, remote ones a minute (#33). A flat ceiling turned a slow
+    // weight load into a failure, which then read as "local models do not work".
+    timeoutMs: timeoutForModel(options.model.descriptor),
   });
 
   trace.add({

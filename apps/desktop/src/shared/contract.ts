@@ -72,7 +72,7 @@ export interface DateraApi {
   listModels(): Promise<ModelCatalogue>;
   downloadBundledModel(modelId: string): Promise<void>;
   removeBundledModel(modelId: string): Promise<void>;
-  warmBundledModel(): Promise<void>;
+  warmChatModel(): Promise<void>;
   /** Subscribe to download progress. Returns an unsubscribe function. */
   onBundledProgress(
     listener: (progress: { modelId: string; receivedBytes: number; totalBytes: number }) => void,
@@ -179,7 +179,7 @@ export const IPC = {
   listModels: 'datera:listModels',
   downloadBundledModel: 'datera:downloadBundledModel',
   removeBundledModel: 'datera:removeBundledModel',
-  warmBundledModel: 'datera:warmBundledModel',
+  warmChatModel: 'datera:warmChatModel',
   bundledProgress: 'datera:bundledProgress',
   setChatModel: 'datera:setChatModel',
   setApiKey: 'datera:setApiKey',

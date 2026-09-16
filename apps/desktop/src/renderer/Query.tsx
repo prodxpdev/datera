@@ -64,6 +64,8 @@ export function Query({
   const [trailer, setTrailer] = useState<string | null>(null);
   const [touched, setTouched] = useState<TouchedSummary | null>(null);
   const [busy, setBusy] = useState<'ask' | 'run' | null>(null);
+  /** Seconds since the current request started, so a slow model does not look like a hang. */
+  const [elapsed, setElapsed] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showMap, setShowMap] = useState(true);
   const [completions, setCompletions] = useState<CompletionResult>(EMPTY);
@@ -99,6 +101,19 @@ export function Query({
       cancelled = true;
     };
   }, [api, datasetId, environment, loadHistory]);
+
+  // A local model can take tens of seconds on a cold load (#33), and a button that says
+  // "Asking…" for forty seconds is indistinguishable from one that has stopped working.
+  // A ticking count is the cheapest honest answer: it says the wait is real and measured.
+  useEffect(() => {
+    if (busy === null) {
+      setElapsed(0);
+      return;
+    }
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [busy]);
 
   const suggestions = useMemo(
     () => (graph === null ? [] : suggestQuestions(graph)),
@@ -306,9 +321,19 @@ export function Query({
           }}
         />
         <button className="btn p" data-ask onClick={() => void ask(question)} disabled={busy !== null}>
-          {busy === 'ask' ? 'Asking…' : 'Ask'}
+          {busy === 'ask' ? `Asking… ${elapsed}s` : 'Ask'}
         </button>
       </div>
+
+      {/* Said only once it is actually slow, and said for the reason it is slow. A hint
+          shown immediately would be noise; one shown at ten seconds is an explanation. */}
+      {busy === 'ask' && elapsed >= 10 && (
+        <div className="softflag" data-slow>
+          Still working — {elapsed}s. A model running on this machine loads its weights the
+          first time it is used, which can take a minute on a laptop. It is much faster after
+          that, and Datera warms it when you pick it.
+        </div>
+      )}
 
       {suggestions.length > 0 && answer === null && result === null && (
         <div className="suggestions" data-suggestions>
@@ -355,7 +380,7 @@ export function Query({
             {showMap ? '− hide schema' : '+ show schema'}
           </button>
           <button className="btn p" data-runsql onClick={() => void run()} disabled={busy !== null}>
-            {busy === 'run' ? 'Running…' : '▶ Run'}
+            {busy === 'run' ? `Running… ${elapsed}s` : '▶ Run'}
           </button>
         </div>
 

@@ -166,7 +166,7 @@ describe('§12.8 the bundled tier answers offline, with no key', () => {
 
   it('warms the selected bundled model, so the first question is not the slow one', async () => {
     await ws.datera.setChatModel(bundledDescriptor(bundledModel(DEFAULT_BUNDLED_MODEL_ID)));
-    await ws.datera.warmBundledModel();
+    await ws.datera.warmChatModel();
 
     expect(llm.warmed).toEqual([DEFAULT_BUNDLED_MODEL_ID]);
   });
@@ -176,7 +176,7 @@ describe('§12.8 the bundled tier answers offline, with no key', () => {
       tier: 'remote', provider: 'anthropic', id: 'claude-sonnet-5',
       role: 'chat', locality: 'remote', label: 'Claude',
     });
-    await ws.datera.warmBundledModel();
+    await ws.datera.warmChatModel();
 
     expect(llm.warmed).toEqual([]);
   });

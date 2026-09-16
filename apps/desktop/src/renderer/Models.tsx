@@ -83,7 +83,7 @@ export function Models({
         // Select and warm it: having downloaded two gigabytes, the user has said what
         // they want, and making them click twice more to use it would be silly.
         await api.setChatModel(bundledDescriptor(offer.spec));
-        void api.warmBundledModel();
+        void api.warmChatModel();
         setNote(`${offer.spec.label} is ready and selected. It runs on this machine, with no key.`);
         await refresh();
       } catch (e) {
@@ -107,7 +107,7 @@ export function Models({
       // Start loading it now, while the user is still looking at the picker, rather than
       // making the first question pay for it. Measured: about 2.5s from a warm page
       // cache, appreciably longer the first time after a download.
-      if (model.tier === 'bundled') void api.warmBundledModel();
+      if (model.tier === 'bundled') void api.warmChatModel();
       setNote(`Chat model set to ${model.id}.`);
       await refresh();
     },

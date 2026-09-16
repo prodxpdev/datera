@@ -105,6 +105,7 @@ import {
   type BundledModelSpec,
 } from './models/bundled.js';
 import type { LocalModelStatus } from './ports/llm.js';
+import { timeoutForModel, warmupRequestFor } from './models/latency.js';
 import {
   assertOperationName, assertParametersMatch, bindArguments, inlineArguments, operationTool,
   type AuthoredOperation, type CreateOperationInput,
@@ -1069,17 +1070,40 @@ export class Datera {
   }
 
   /**
-   * Load the selected bundled model ahead of the first question.
+   * Load the selected model ahead of the first question (#33).
+   *
+   * Covers both local tiers — the bundled runtime and a runtime the user installed — because
+   * both load weights on first use and both made the first question pay for it. Named for
+   * what it does rather than for the tier it started with.
    *
    * Fire-and-forget by design: the caller should not wait, and a failure must not surface
    * as an error. The only consequence of it not working is a slower first answer.
    */
-  async warmBundledModel(): Promise<void> {
-    const llm = this.ports.llm;
-    if (llm === undefined) return;
+  async warmChatModel(): Promise<void> {
     const descriptor = await this.selectedChatModelDescriptor();
-    if (descriptor === null || descriptor.tier !== 'bundled') return;
-    await llm.warm(descriptor.id).catch(() => undefined);
+    if (descriptor === null) return;
+
+    // The bundled tier loads through the host's runtime.
+    if (descriptor.tier === 'bundled') {
+      await this.ports.llm?.warm(descriptor.id).catch(() => undefined);
+      return;
+    }
+
+    // A runtime the user installed loads its weights on first use, so the first real
+    // question pays for it — which is the MacBook Air complaint in #33. A one-token
+    // request moves that cost to a moment nobody is waiting on an answer. Remote models
+    // get nothing: there is nothing to warm, and the call would be billed.
+    const warmup = warmupRequestFor(descriptor);
+    if (warmup === null) return;
+
+    try {
+      const model = await this.chatModel();
+      await model?.chat(warmup);
+      this.ports.logger.log('debug', 'Local model warmed', { model: descriptor.id });
+    } catch {
+      // An optimisation. A runtime that will not warm reports itself through the model
+      // picker; failing here would turn a slow first answer into no answer.
+    }
   }
 
   /** Fetch and verify a bundled model's weights (§9, D-08: fetched on first run). */
@@ -2042,6 +2066,7 @@ export class Datera {
         { role: 'user', content: user },
       ],
       temperature: 0,
+      timeoutMs: timeoutForModel(model.descriptor),
     });
 
     trace.add({

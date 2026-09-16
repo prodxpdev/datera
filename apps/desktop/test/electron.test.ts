@@ -107,7 +107,7 @@ describe('P1-18/P1-19 Electron shell', () => {
         'detectRelationships', 'draftDictionary', 'embeddingStatus', 'engineInfo',
         'explainTouched', 'getDictionary', 'getSchema', 'getTracePayloadCapture',
         'getTraceRetention', 'hasApiKey', 'listDatasets', 'listRelationships',
-        'listModels', 'downloadBundledModel', 'removeBundledModel', 'warmBundledModel',
+        'listModels', 'downloadBundledModel', 'removeBundledModel', 'warmChatModel',
         'onBundledProgress',
         'listSources', 'listTools', 'listWorkbookSheets', 'createOperation', 'listOperations', 'deleteOperation', 'callOperation', 'pickFiles', 'preview', 'pruneTraceLog', 'query',
         'queryTraceLog', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',

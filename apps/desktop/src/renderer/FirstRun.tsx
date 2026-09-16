@@ -56,7 +56,7 @@ export function FirstRun({
     try {
       await api.downloadBundledModel(offer.modelId);
       await api.setChatModel(bundledDescriptor(offer.spec));
-      void api.warmBundledModel();
+      void api.warmChatModel();
       onDone();
       setOffer(null);
     } catch (e) {
