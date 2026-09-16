@@ -69,6 +69,33 @@ describe.runIf(enabled)('the bundled runtime, for real', () => {
   );
 
   it(
+    'answers a second question without being restarted',
+    async () => {
+      // A real bug this caught: a context hands out a fixed number of sequences, one was
+      // taken per generation and never returned, and the *second* question anyone asked
+      // failed with "No sequences left". Every other test created a fresh instance, so
+      // nothing noticed — the bug was only reachable by asking twice.
+      //
+      // Worth naming: this cannot be caught by the default suite, because it needs the
+      // real runtime. A stub has no sequences to run out of.
+      const llm = new NodeLocalLlm({ directory });
+      const system =
+        'You translate questions into a single DuckDB SQL SELECT statement.\n' +
+        'Schema:\nTABLE orders (order_id VARCHAR, product VARCHAR, revenue_cents BIGINT)';
+
+      for (const question of ['total revenue by product', 'how many orders per product']) {
+        const result = await llm.generate({
+          modelId: spec.id, system, prompt: question, maxTokens: 200, grammar: SQL_GRAMMAR,
+        });
+        expect(result.text.trim()).toMatch(/^(SELECT|WITH|EXPLAIN|CANNOT_ANSWER:)/i);
+      }
+
+      await llm.dispose();
+    },
+    10 * 60_000,
+  );
+
+  it(
     'can still decline',
     async () => {
       const llm = new NodeLocalLlm({ directory });
@@ -83,9 +110,10 @@ describe.runIf(enabled)('the bundled runtime, for real', () => {
         grammar: SQL_GRAMMAR,
       });
 
-      // Recorded rather than asserted hard: a 3B does sometimes invent a column here, and
-      // a test that pretends otherwise would be testing a hope. The behaviour that must
-      // hold is the guard above it — an invented column is caught by the binder and
+      // Measured: this model declines cleanly and names the missing information. Still
+      // not asserted hard — a small model can invent a column on some phrasings, and a
+      // test that pretends otherwise would be testing a hope. The behaviour that must
+      // hold is the guard above it: an invented column is caught by the binder and
       // reported as CANNOT_ANSWER by the core, which ask.test.ts covers.
       process.stdout.write(`  declined? ${/^CANNOT_ANSWER/i.test(result.text.trim())}\n`);
       expect(result.text.length).toBeGreaterThan(0);

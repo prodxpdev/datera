@@ -153,32 +153,42 @@ export class NodeLocalLlm implements LocalLlmPort {
     const mod = this.module!;
 
     const context = await this.contextFor(request.modelId);
-    const session = new mod.LlamaChatSession({
-      contextSequence: (context as { getSequence(): never }).getSequence(),
-      systemPrompt: request.system,
-    });
 
-    // The grammar is the single biggest quality lever at this size: unconstrained, a
-    // small model wraps its answer in prose or a markdown fence often enough that the
-    // extractor has to guess, and guessing is what this product refuses to do.
-    const grammar =
-      request.grammar === undefined
-        ? undefined
-        : await llama.createGrammar({ grammar: request.grammar });
+    // A context hands out a fixed number of sequences, and one is taken per generation.
+    // Not returning it means the *second* question a user asks fails with "No sequences
+    // left" — so this is released in a finally, not on the happy path.
+    const sequence = (context as { getSequence(): { dispose(): void } }).getSequence();
 
-    const text = await session.prompt(request.prompt, {
-      maxTokens: request.maxTokens,
-      // SQL generation is not a place for creativity.
-      temperature: 0,
-      ...(grammar === undefined ? {} : { grammar }),
-    });
+    try {
+      const session = new mod.LlamaChatSession({
+        contextSequence: sequence as never,
+        systemPrompt: request.system,
+      });
 
-    const model = this.loaded!.model as { tokenize(t: string): unknown[] };
-    return {
-      text,
-      inputTokens: model.tokenize(`${request.system}\n${request.prompt}`).length,
-      outputTokens: model.tokenize(text).length,
-    };
+      // The grammar is the single biggest quality lever at this size: unconstrained, a
+      // small model wraps its answer in prose or a markdown fence often enough that the
+      // extractor has to guess, and guessing is what this product refuses to do.
+      const grammar =
+        request.grammar === undefined
+          ? undefined
+          : await llama.createGrammar({ grammar: request.grammar });
+
+      const text = await session.prompt(request.prompt, {
+        maxTokens: request.maxTokens,
+        // SQL generation is not a place for creativity.
+        temperature: 0,
+        ...(grammar === undefined ? {} : { grammar }),
+      });
+
+      const model = this.loaded!.model as { tokenize(t: string): unknown[] };
+      return {
+        text,
+        inputTokens: model.tokenize(`${request.system}\n${request.prompt}`).length,
+        outputTokens: model.tokenize(text).length,
+      };
+    } finally {
+      sequence.dispose();
+    }
   }
 
   async dispose(): Promise<void> {

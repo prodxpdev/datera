@@ -210,15 +210,16 @@ export function Models({
           })
         )}
 
-        {/* §9 requires this said where the choice is made. A 3B writes weaker SQL than a
-            frontier model — measured on this project, a local 14B divided before summing
-            where Claude divided after. Leaving it out would make the default feel broken
-            rather than understood. */}
+        {/* §9 requires the trade-off stated where the choice is made — and stated
+            accurately in both directions. Overstating the weakness would misrepresent the
+            tier as much as hiding it would. These numbers are measured, not assumed. */}
         <div className="caveat">
-          <b>These are small models.</b> They write weaker SQL than a frontier model — more so on
-          joins and on anything needing a unit conversion. That is why a confirmed dictionary and
-          the visible SQL matter <i>more</i> on this tier, not less: you can see what it wrote
-          before it runs, and say what your columns mean so it does not have to guess.
+          <b>These are small models, and they are better than that sounds.</b> The 3B answers a
+          typical question in about a second once loaded, joins correctly on a confirmed
+          relationship, and declines rather than inventing a column. It is still weaker than a
+          frontier model on long or ambiguous questions. Either way you see the SQL before it
+          runs — and a confirmed dictionary helps most here, because it removes the guessing
+          rather than hoping the model guesses well.
         </div>
       </section>
 

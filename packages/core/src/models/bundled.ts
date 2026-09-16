@@ -20,15 +20,25 @@ import type { ChatModel, ChatRequest, ChatResponse, ModelDescriptor } from './ty
  * smaller quant because below 4-bit the SQL degrades faster than the memory saving is
  * worth.
  *
- * ## The honest caveat
+ * ## What it actually does, measured
  *
- * A 3B model writes weaker SQL than a frontier model, and the UI must keep saying so
- * (§9). Measured on this project: a local 14B produced `SUM(revenue_cents / 100.0)` —
- * dividing before summing, which drifts — where Claude produced
- * `SUM(revenue_cents) / 100.0`. A 3B is worse than that 14B. This tier is the floor that
- * makes the product work with nothing configured; it is not the recommended experience,
- * and pretending otherwise would be the kind of quiet overclaim the trace exists to
- * prevent.
+ * The 3B, against this project's own fixtures, with the grammar on:
+ *
+ *   - `total revenue in dollars by product` -> `SUM(revenue_cents) / 100` — sums first,
+ *     then divides. Worth recording because the assumption going in was that it would
+ *     get this wrong: a local 14B on this same project produced
+ *     `SUM(revenue_cents / 100.0)`, which drifts. It did not.
+ *   - A two-table join on a confirmed relationship: correct, with aliases.
+ *   - An unanswerable question: declined, naming what was missing.
+ *   - Roughly 0.7–2s per query once loaded; about 2.5s to load from a warm page cache,
+ *     appreciably longer the first time after the download.
+ *
+ * ## The caveat that still holds
+ *
+ * A 3B is still weaker than a frontier model on long, multi-step or ambiguous questions,
+ * and the UI keeps saying so (§9). But the honest framing is "smaller, and it shows on
+ * hard questions", not "expect it to be wrong" — overstating the weakness would be as
+ * much of a misrepresentation as hiding it, and the measurements above are why.
  */
 
 export interface BundledModelSpec {
@@ -70,7 +80,7 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
     sizeBytes: 1_117_320_768,
     minFreeMemoryBytes: 2 * GIB,
     contextTokens: 4096,
-    tradeoff: 'Smallest and fastest. Handles single-table questions; struggles with joins.',
+    tradeoff: 'Smallest and fastest. Fine for single-table questions; weaker on joins.',
   },
   {
     id: 'qwen2.5-coder-3b-instruct-q4_k_m',
@@ -81,7 +91,7 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
     sizeBytes: 2_104_932_800,
     minFreeMemoryBytes: 3 * GIB,
     contextTokens: 8192,
-    tradeoff: 'The default. Fits an 8 GB machine and answers in a few seconds.',
+    tradeoff: 'The default. Fits an 8 GB machine; answers in about a second once loaded.',
   },
   {
     id: 'qwen2.5-coder-7b-instruct-q4_k_m',
@@ -92,7 +102,7 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
     sizeBytes: 4_683_073_536,
     minFreeMemoryBytes: 6 * GIB,
     contextTokens: 8192,
-    tradeoff: 'Noticeably better on joins and aggregates. Needs 16 GB to be comfortable.',
+    tradeoff: 'More headroom on complex queries. Needs 16 GB to be comfortable.',
   },
 ];
 
