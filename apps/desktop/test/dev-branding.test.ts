@@ -30,6 +30,11 @@ function bundlePath(): string | null {
   return existsSync(candidate) ? candidate : null;
 }
 
+function pathFileFor(): string {
+  const require = createRequire(join(repoRoot, 'apps/desktop/package.json'));
+  return join(dirname(require.resolve('electron/package.json')), 'path.txt');
+}
+
 function plistValue(plist: string, key: string): string {
   return execFileSync('plutil', ['-extract', key, 'raw', '-o', '-', plist], { encoding: 'utf8' }).trim();
 }
@@ -52,6 +57,21 @@ describe.runIf(process.platform === 'darwin')('development bundle branding', () 
     // which is exactly what kept the tooltip saying "Electron" after the name was right.
     expect(plistValue(plist, 'CFBundleIdentifier')).toBe('app.datera.desktop.dev');
     expect(existsSync(join(bundle!, 'Contents', 'Resources', 'datera.icns'))).toBe(true);
+  });
+
+  it('names the bundle directory Datera.app, which is what the Dock tooltip reads', () => {
+    // The last and least obvious layer. CFBundleName, CFBundleDisplayName, the bundle
+    // identifier and the LaunchServices record all said Datera while the tooltip still
+    // said Electron, because the tooltip comes from the bundle's file name.
+    expect(bundle!.endsWith('/Datera.app')).toBe(true);
+  });
+
+  it('keeps path.txt pointing at the bundle it renamed', () => {
+    // This file is how require('electron') and Playwright find the binary. Renaming the
+    // directory without rewriting it breaks every launch, including the test suite's.
+    const declared = readFileSync(pathFileFor(), 'utf8').trim();
+    expect(declared.startsWith('Datera.app/')).toBe(true);
+    expect(existsSync(join(dirname(bundle!), declared))).toBe(true);
   });
 
   it('leaves the executable name alone', () => {

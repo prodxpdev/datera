@@ -21,13 +21,14 @@
  * A no-op off macOS, where none of this exists.
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const APP_NAME = 'Datera';
+const BUNDLE_DIR = 'Datera.app';
 const ICON = 'datera.icns';
 /**
  * Its own identifier, not Electron's.
@@ -46,6 +47,30 @@ if (process.platform !== 'darwin') {
   process.exit(0);
 }
 
+/**
+ * The bundle is renamed on disk too, not just relabelled inside.
+ *
+ * The Dock tooltip for a running app comes from the bundle's *file name*, which is why it
+ * kept saying "Electron" after CFBundleName, CFBundleDisplayName, the identifier and the
+ * LaunchServices record all said Datera — every one of those was necessary, and none of
+ * them was the tooltip.
+ *
+ * Renaming means the electron package's own path.txt has to be rewritten to match, since
+ * that is how `require('electron')` and Playwright find the binary.
+ */
+function renameBundle(packageDir, current) {
+  const target = join(dirname(current), BUNDLE_DIR);
+  if (current === target) return { path: target, renamed: false };
+
+  renameSync(current, target);
+
+  const pathFile = join(packageDir, 'path.txt');
+  const original = readFileSync(pathFile, 'utf8').trim();
+  writeFileSync(pathFile, [BUNDLE_DIR, ...original.split('/').slice(1)].join('/'));
+
+  return { path: target, renamed: true };
+}
+
 const bundle = findBundle();
 if (bundle === null) {
   // Not fatal: a fresh checkout without install, or a platform layout we do not know.
@@ -58,16 +83,23 @@ if (relative(root, bundle).startsWith('..')) {
   throw new Error(`refusing to modify ${bundle}: outside ${root}`);
 }
 
-const plist = join(bundle, 'Contents', 'Info.plist');
-const resources = join(bundle, 'Contents', 'Resources');
+const packageDir = findPackageDir();
+const { path: bundlePath, renamed } =
+  packageDir === null ? { path: bundle, renamed: false } : renameBundle(packageDir, bundle);
+
+const plist = join(bundlePath, 'Contents', 'Info.plist');
+const resources = join(bundlePath, 'Contents', 'Resources');
 const source = join(root, 'apps/desktop/build/icon.icns');
 
+// A rename always re-registers: LaunchServices keys records by path, so the old one
+// still points at a bundle that is no longer there.
 if (
+  !renamed &&
   readKey('CFBundleName') === APP_NAME &&
   readKey('CFBundleIdentifier') === BUNDLE_ID &&
   existsSync(join(resources, ICON))
 ) {
-  console.log(`brand-dev-electron: already branded (${bundle}).`);
+  console.log(`brand-dev-electron: already branded (${bundlePath}).`);
   process.exit(0);
 }
 
@@ -79,7 +111,7 @@ execFileSync('plutil', ['-replace', 'CFBundleIconFile', '-string', ICON, plist])
 execFileSync('plutil', ['-replace', 'CFBundleIdentifier', '-string', BUNDLE_ID, plist]);
 
 // The Dock caches by bundle path and mtime; touching the bundle is what makes it re-read.
-execFileSync('touch', [bundle]);
+execFileSync('touch', [bundlePath]);
 
 // And LaunchServices caches independently of that, so it is told explicitly. Without
 // this the old record survives and the tile keeps the old name.
@@ -88,22 +120,26 @@ const lsregister =
   '/Support/lsregister';
 if (existsSync(lsregister)) {
   try {
-    execFileSync(lsregister, ['-f', bundle], { stdio: 'ignore' });
+    execFileSync(lsregister, ['-f', bundlePath], { stdio: 'ignore' });
   } catch {
     // Best effort: a stale tooltip is worth reporting, not worth failing a launch over.
   }
 }
 
-console.log(`brand-dev-electron: branded ${bundle} as ${APP_NAME}.`);
+console.log(`brand-dev-electron: branded ${bundlePath} as ${APP_NAME}.`);
 
-function findBundle() {
+function findPackageDir() {
   const require = createRequire(join(root, 'apps/desktop/package.json'));
-  let packageDir;
   try {
-    packageDir = dirname(require.resolve('electron/package.json'));
+    return dirname(require.resolve('electron/package.json'));
   } catch {
     return null;
   }
+}
+
+function findBundle() {
+  const packageDir = findPackageDir();
+  if (packageDir === null) return null;
 
   const pathFile = join(packageDir, 'path.txt');
   if (!existsSync(pathFile)) return null;

@@ -168,6 +168,17 @@ export function Dictionary({
 
       <div className="dicttbl">
         <table>
+          {/* Widths declared once here rather than per-cell: the meaning column takes the
+              slack, everything else is short. */}
+          <colgroup>
+            <col className="c-column" />
+            <col className="c-meaning" />
+            <col className="c-alias" />
+            <col className="c-unit" />
+            <col className="c-role" />
+            <col className="c-state" />
+            <col className="c-acts" />
+          </colgroup>
           <thead>
             <tr>
               <th>Column</th>
@@ -214,7 +225,7 @@ export function Dictionary({
                     title="Hide this column from the model entirely — not even its name is sent"
                     onClick={() => void hide(row)}
                   >
-                    {row.sensitivity === 'hidden' ? 'Unhide' : 'Hide from NL'}
+                    {row.sensitivity === 'hidden' ? 'Unhide' : 'Hide'}
                   </button>
                 </td>
               </tr>

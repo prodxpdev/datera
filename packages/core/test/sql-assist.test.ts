@@ -154,6 +154,9 @@ describe('completions', () => {
   };
 
   const at = (sql: string): ReturnType<typeof completionsAt> => completionsAt(graph, sql, sql.length);
+  /** ⌃Space — the user asked for the full list, so restraint does not apply. */
+  const explicitly = (sql: string, cursor = sql.length): ReturnType<typeof completionsAt> =>
+    completionsAt(graph, sql, cursor, { trigger: 'explicit' });
 
   it('suggests tables after FROM', () => {
     const result = at('SELECT * FROM ');
@@ -173,7 +176,7 @@ describe('completions', () => {
 
   it('suggests columns of the tables already in the query', () => {
     const result = at('SELECT  FROM orders');
-    const labels = completionsAt(graph, 'SELECT  FROM orders', 7).items.map((i) => i.label);
+    const labels = explicitly('SELECT  FROM orders', 7).items.map((i) => i.label);
     expect(labels).toContain('product');
     expect(labels).toContain('revenue_cents');
     // Not columns of a table the query has not mentioned.
@@ -183,7 +186,7 @@ describe('completions', () => {
 
   it('suggests columns of every joined table', () => {
     const sql = 'SELECT  FROM orders JOIN support_notes ON 1=1';
-    const labels = completionsAt(graph, sql, 7).items.map((i) => i.label);
+    const labels = explicitly(sql, 7).items.map((i) => i.label);
     expect(labels).toContain('product');
     expect(labels).toContain('note');
   });
@@ -218,6 +221,56 @@ describe('completions', () => {
   it('returns nothing rather than noise mid-word in a string literal', () => {
     const result = at(`SELECT * FROM orders WHERE product = 'Trail Ho`);
     expect(result.items).toEqual([]);
+  });
+
+  // ---- restraint -----------------------------------------------------------
+  //
+  // Typing `SELECT ` used to open a scrolling list of all thirty keywords. A picker that
+  // appears uninvited and covers the editor is worse than no picker: it hides the query
+  // being written, and its first highlighted entry is one Tab away from being inserted.
+
+  it('offers nothing mid-statement until something has been typed', () => {
+    expect(at('SELECT ').items).toEqual([]);
+    expect(at('SELECT * FROM orders WHERE ').items).toEqual([]);
+  });
+
+  it('still offers everything when the user explicitly asks', () => {
+    // ⌃Space is a request. Restraint applies to appearing uninvited, not to being useful.
+    expect(explicitly('SELECT ').items.length).toBeGreaterThan(0);
+  });
+
+  it('offers a column as soon as one character narrows it', () => {
+    const labels = at('SELECT * FROM orders WHERE p').items.map((i) => i.label);
+    expect(labels).toContain('product');
+  });
+
+  it('holds keywords back until two characters, since one matches too many', () => {
+    const one = at('SELECT * FROM orders WHERE s').items;
+    expect(one.every((i) => i.kind !== 'keyword')).toBe(true);
+
+    const two = at('SELECT * FROM orders WHERE su').items.map((i) => i.label);
+    expect(two).toContain('SUM');
+  });
+
+  it('still opens with no prefix where the position asks a specific question', () => {
+    // After FROM there is exactly one kind of answer and few of them, so appearing is
+    // helpful rather than noisy. Same after a dot, and after ON.
+    expect(at('SELECT * FROM ').items.length).toBeGreaterThan(0);
+    expect(at('SELECT * FROM orders WHERE orders.').items.length).toBeGreaterThan(0);
+    expect(at('SELECT * FROM orders JOIN support_notes ON ').items.length).toBeGreaterThan(0);
+  });
+
+  it('never returns more than fits on screen', () => {
+    // The box showed ten and scrolled; a list you have to scroll is a list you read
+    // instead of typing past.
+    expect(explicitly('SELECT ').items.length).toBeLessThanOrEqual(12);
+  });
+
+  it('puts columns before keywords, because that is what the schema knows', () => {
+    const kinds = at('SELECT * FROM orders WHERE pr').items.map((i) => i.kind);
+    if (kinds.includes('keyword') && kinds.includes('column')) {
+      expect(kinds.indexOf('column')).toBeLessThan(kinds.indexOf('keyword'));
+    }
   });
 
   it('is deterministic', () => {

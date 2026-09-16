@@ -228,9 +228,22 @@
 .mst.un { background: #f1f2f6; color: var(--ink3); }
 
 .dicttbl { border: 1px solid var(--line); border-radius: 10px; overflow: auto; background: var(--card); max-width: 100%; }
-.dicttbl table { border-collapse: collapse; min-width: 100%; width: max-content; font-size: 12.5px; }
+/* Fits the pane rather than growing past it. `width: max-content` let a long meaning
+   push the row actions off the right edge, where the only way to reach them was a
+   horizontal scrollbar macOS does not draw until you are already scrolling. */
+.dicttbl table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12.5px; }
 .dicttbl th { text-align: left; background: #f6f7f9; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--ink2); padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.dicttbl td { padding: 8px 10px; border-bottom: 1px solid #f1f2f6; vertical-align: top; }
+.dicttbl td { padding: 8px 10px; border-bottom: 1px solid #f1f2f6; vertical-align: top; overflow-wrap: anywhere; }
+
+/* The meaning is the long column, so it is the one that absorbs the slack. Everything
+   else is short and sized to its content. */
+.dicttbl col.c-column { width: 17%; }
+.dicttbl col.c-meaning { width: auto; }
+.dicttbl col.c-alias { width: 13%; }
+.dicttbl col.c-unit { width: 8%; }
+.dicttbl col.c-role { width: 9%; }
+.dicttbl col.c-state { width: 9%; }
+.dicttbl col.c-acts { width: 11%; }
 .dicttbl td.cn { font-family: var(--mono); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
 .dicttbl tr.hiddenrow { background: #fbfbfc; opacity: .7; }
 .dicttbl .ph { color: var(--ink3); font-style: italic; }
@@ -239,7 +252,7 @@
 .enums { margin-top: 5px; display: flex; flex-direction: column; gap: 2px; }
 .enum { font-size: 11.5px; color: var(--ink3); }
 .enum b { font-family: var(--mono); color: var(--ink2); }
-.rowacts { display: flex; gap: 5px; flex-wrap: wrap; }
+.rowacts { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .rowacts .btn { padding: 3px 8px; font-size: 11px; }
 .dcpay { margin-top: 14px; border: 1px solid var(--indigo-line); background: var(--indigo-bg); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--ink2); }
 .dcpay b { color: var(--ink); }
@@ -490,10 +503,13 @@
 /* --- editor + completions -------------------------------------------------- */
 .sqlwrap { position: relative; }
 .sqlfoot { font-size: 11px; color: var(--ink3); padding: 7px 13px 10px; font-family: var(--mono); }
+/* Below the editor, not over it. Floating the list on top of the textarea hid the query
+   the user was in the middle of writing — the one thing they needed to see. */
 .acbox {
-  position: absolute; left: 13px; bottom: 9px; z-index: 30; width: min(460px, calc(100% - 26px));
+  position: absolute; left: 13px; top: calc(100% - 4px); z-index: 30;
+  width: min(460px, calc(100% - 26px));
   background: var(--card); border: 1px solid var(--line2); border-radius: 10px;
-  box-shadow: 0 8px 30px rgba(18, 22, 28, .18); overflow: hidden; max-height: 260px; overflow-y: auto;
+  box-shadow: 0 8px 30px rgba(18, 22, 28, .18); overflow: hidden;
 }
 .acitem {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;

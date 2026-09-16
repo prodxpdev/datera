@@ -97,6 +97,14 @@ export interface CompletionItem {
   readonly insert: string;
 }
 
+export interface CompletionOptions {
+  /**
+   * 'typing' — the picker is appearing on its own, so it must earn the interruption.
+   * 'explicit' — the user pressed ⌃Space and asked for the whole list.
+   */
+  readonly trigger?: 'typing' | 'explicit' | undefined;
+}
+
 export interface CompletionResult {
   /** The partial word the items replace, so the editor knows what to overwrite. */
   readonly replacing: string;
@@ -104,6 +112,16 @@ export interface CompletionResult {
 }
 
 const EMPTY: CompletionResult = { replacing: '', items: [] };
+
+/** More than fits without scrolling is a list you read instead of typing past. */
+const MAX_ITEMS = 12;
+
+/**
+ * Keywords are held back until two characters. There are thirty of them and one letter
+ * matches a third of the alphabet's worth — they are also the part a user is least likely
+ * to need help spelling.
+ */
+const MIN_KEYWORD_PREFIX = 2;
 
 const KEYWORDS = [
   'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'JOIN',
@@ -121,7 +139,13 @@ const KEYWORDS = [
  * half-typed. It also means the editor keeps working with no key configured and no
  * network, which is the point of the product.
  */
-export function completionsAt(graph: SchemaGraph, sql: string, cursor: number): CompletionResult {
+export function completionsAt(
+  graph: SchemaGraph,
+  sql: string,
+  cursor: number,
+  options: CompletionOptions = {},
+): CompletionResult {
+  const explicit = options.trigger === 'explicit';
   const before = sql.slice(0, cursor);
   if (insideStringLiteral(before)) return EMPTY;
 
@@ -133,33 +157,43 @@ export function completionsAt(graph: SchemaGraph, sql: string, cursor: number): 
   if (qualifier !== null) {
     const table = resolveQualifier(graph, sql, unquote(qualifier[1]!));
     if (table === undefined) return { replacing: word, items: [] };
-    return { replacing: word, items: table.columns.map(columnItem(table)).filter(matches(word)) };
+    return capped(word, table.columns.map(columnItem(table)).filter(matches(word)));
   }
 
   const clause = lastKeyword(prefix);
 
+  // These three positions ask a specific question with few possible answers, so the
+  // picker is welcome even with nothing typed.
   if (clause === 'FROM' || clause === 'JOIN') {
-    return {
-      replacing: word,
-      items: graph.tables.map(tableItem).filter(matches(word)),
-    };
+    return capped(word, graph.tables.map(tableItem).filter(matches(word)));
   }
 
   if (clause === 'ON') {
     const joins = joinConditions(graph, sql).filter(matches(word));
-    if (joins.length > 0) return { replacing: word, items: joins };
+    if (joins.length > 0) return capped(word, joins);
   }
 
-  // Everywhere else: the columns of the tables this query has actually named, then
-  // keywords. Offering every column in the dataset would bury the five that can be typed
-  // here under the forty that cannot.
-  const inScope = tablesInScope(graph, sql);
-  const items = [
-    ...inScope.flatMap((t) => t.columns.map(columnItem(t))),
-    ...KEYWORDS.map((k): CompletionItem => ({ label: k, kind: 'keyword', detail: '', insert: k })),
-  ];
+  // Everywhere else the cursor could be almost anything, so the picker has to earn the
+  // interruption. Uninvited, it waits for a prefix: a list that opens on a space covers
+  // the query being written, and its highlighted first entry is one Tab from insertion.
+  if (!explicit && word.length === 0) return EMPTY;
 
-  return { replacing: word, items: items.filter(matches(word)) };
+  // Columns of the tables this query has actually named — offering every column in the
+  // dataset would bury the five that can be typed here under the forty that cannot.
+  const columns = tablesInScope(graph, sql).flatMap((t) => t.columns.map(columnItem(t)));
+
+  const keywords =
+    explicit || word.length >= MIN_KEYWORD_PREFIX
+      ? KEYWORDS.map((k): CompletionItem => ({ label: k, kind: 'keyword' as const, detail: '', insert: k }))
+      : [];
+
+  // Columns first: they are what the schema knows and what a keyword cannot be guessed
+  // from. Keywords are the fallback, not the headline.
+  return capped(word, [...columns, ...keywords].filter(matches(word)));
+}
+
+function capped(word: string, items: readonly CompletionItem[]): CompletionResult {
+  return { replacing: word, items: items.slice(0, MAX_ITEMS) };
 }
 
 function matches(word: string): (item: CompletionItem) => boolean {

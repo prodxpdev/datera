@@ -140,9 +140,9 @@ export function Query({
   }, [api, datasetId, sql, loadHistory]);
 
   const recompute = useCallback(
-    (text: string, cursor: number) => {
+    (text: string, cursor: number, trigger: 'typing' | 'explicit' = 'typing') => {
       if (graph === null) return;
-      setCompletions(completionsAt(graph, text, cursor));
+      setCompletions(completionsAt(graph, text, cursor, { trigger }));
       setHighlighted(0);
     },
     [graph],
@@ -178,7 +178,7 @@ export function Query({
     }
     if (e.key === ' ' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      recompute(sql, e.currentTarget.selectionStart);
+      recompute(sql, e.currentTarget.selectionStart, 'explicit');
       return;
     }
     if (completions.items.length === 0) return;
@@ -284,7 +284,7 @@ export function Query({
 
           {completions.items.length > 0 && (
             <div className="acbox" data-completions>
-              {completions.items.slice(0, 10).map((item, i) => (
+              {completions.items.map((item, i) => (
                 <button
                   key={`${item.kind}-${item.label}`}
                   className={`acitem ${i === highlighted ? 'on' : ''}`}
@@ -302,7 +302,7 @@ export function Query({
             </div>
           )}
         </div>
-        <div className="sqlfoot">⌘↵ runs. Completions come from your schema, not a model.</div>
+        <div className="sqlfoot">⌘↵ runs · ⌃Space for the full list. Completions come from your schema, not a model.</div>
       </div>
 
       {showMap && graph !== null && (

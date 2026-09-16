@@ -113,6 +113,37 @@ describe('Workspace layout is responsive', () => {
     ).toEqual([]);
   });
 
+  it.each(WIDTHS)('keeps every dictionary row action reachable at %ipx', async (width) => {
+    await setWidth(width);
+    await page.click('[data-nav="meaning"]');
+    await page.waitForSelector('.dicttbl');
+
+    // Draft the meanings first, or this test has no teeth: it is the long generated
+    // sentence in the meaning column that widens the table, and an undrafted dictionary
+    // shows a short placeholder that fits at any width.
+    await page.click('[data-autodraft]');
+    await expect
+      .poll(async () => page.textContent('.dicttbl'), { timeout: 60_000 })
+      .not.toMatch(/no meaning yet/);
+
+    // The bug: the meaning column grew to fit its longest sentence, pushing Confirm and
+    // Hide past the right edge — reachable only via a horizontal scrollbar macOS will not
+    // draw until you are already scrolling, which you cannot start without the scrollbar.
+    const clipped = await page.evaluate(() => {
+      const viewport = document.documentElement.clientWidth;
+      const out: number[] = [];
+      for (const el of document.querySelectorAll('.rowacts .btn')) {
+        const rect = el.getBoundingClientRect();
+        if (rect.right > viewport + 1) out.push(Math.round(rect.right));
+      }
+      return { out, viewport };
+    });
+
+    expect(clipped.out, `buttons reach ${clipped.out.join(', ')}px in ${clipped.viewport}px`).toEqual([]);
+    await page.click('[data-nav="data"]');
+    await page.waitForSelector('.prev', { timeout: 30_000 });
+  });
+
   it('scrolls a wide table inside its own container, not the page', async () => {
     await setWidth(1000);
 
