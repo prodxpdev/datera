@@ -122,6 +122,8 @@ export { assertWithinDataset, extractTableReferences } from './query/scope.js';
 export { summariseTouched } from './query/touched.js';
 export { completionsAt, referencedTables, starterSql } from './query/schema-graph.js';
 export { suggestQuestions } from './query/suggest.js';
+export { explainRefusal } from './query/explain-refusal.js';
+export type { RefusalExplanation } from './query/explain-refusal.js';
 export type { Suggestion, SuggestionKind } from './query/suggest.js';
 export type {
   CompletionItem, CompletionKind, CompletionResult,

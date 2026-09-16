@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   Dataset,
+  ModelCatalogue,
   EngineInfo,
   PreviewResult,
   SourceSchema,
@@ -39,9 +40,8 @@ const KIND_LABEL: Record<string, string> = {
   sqlite: 'DB', postgres: 'PG', mysql: 'MYSQL',
 };
 
-type NavId = 'data' | 'query' | 'meaning' | 'changes' | 'activity';
+type NavId = 'data' | 'query' | 'meaning' | 'learn' | 'changes' | 'activity';
 type DataTab = 'sources' | 'shape';
-type MeaningTab = 'dictionary' | 'learn';
 
 interface NavItem {
   readonly id: NavId;
@@ -56,7 +56,10 @@ interface NavItem {
 const NAV: readonly NavItem[] = [
   { id: 'data', icon: '▤', label: 'Data', enabled: true, title: 'Data', subtitle: 'sources, groups, working copies and exports' },
   { id: 'query', icon: '◇', label: 'Query', enabled: true, title: 'Query', subtitle: 'ask in words or write SQL — same engine, same guard' },
-  { id: 'meaning', icon: '⌗', label: 'Meaning', enabled: true, title: 'Meaning', subtitle: 'what your columns mean, and how a value reaches the screen' },
+  { id: 'meaning', icon: '⌗', label: 'Meaning', enabled: true, title: 'Meaning', subtitle: 'what your columns mean — the layer NL and search read' },
+  // Kept as a destination rather than folded in as a tab. It is the product's stated
+  // reason to exist in a classroom, and a tab gets clicked a fraction as often.
+  { id: 'learn', icon: '◎', label: 'Learn', enabled: true, title: 'Learn', subtitle: 'how a value actually reaches the screen, and what breaks on the way' },
   { id: 'changes', icon: '✎', label: 'Changes', enabled: true, title: 'Changes', subtitle: 'propose a change, see exactly what it does, then confirm' },
   { id: 'activity', icon: '⇄', label: 'Activity', enabled: true, title: 'Activity', subtitle: 'what agents can call, and every request that ran' },
 ];
@@ -67,6 +70,9 @@ interface Loaded {
   readonly engine: EngineInfo;
   readonly datasets: readonly Dataset[];
   readonly sources: readonly SourceWithStatus[];
+  readonly models: ModelCatalogue;
+  /** Datasets that may currently be written to. Usually empty, and that is the point. */
+  readonly writable: readonly string[];
 }
 
 export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
@@ -79,7 +85,6 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [nav, setNav] = useState<NavId>('data');
   const [dataTab, setDataTab] = useState<DataTab>('sources');
-  const [meaningTab, setMeaningTab] = useState<MeaningTab>('dictionary');
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The governing boundary, held once for the whole app instead of re-asked per view.
   const [datasetId, setDatasetId] = useState<string | null>(null);
@@ -94,10 +99,16 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [engine, datasets, sources] = await Promise.all([
-        api.engineInfo(), api.listDatasets(), api.listSources(),
+      const [engine, datasets, sources, models] = await Promise.all([
+        api.engineInfo(), api.listDatasets(), api.listSources(), api.listModels(),
       ]);
-      setLoaded({ engine, datasets, sources });
+      const grants = await Promise.all(
+        datasets.map(async (d) => ((await api.canWrite(d.id)) ? d.id : null)),
+      );
+      setLoaded({
+        engine, datasets, sources, models,
+        writable: grants.filter((id): id is string => id !== null),
+      });
       setDatasetId((current) =>
         current !== null && datasets.some((d) => d.id === current) ? current : datasets[0]?.id ?? null,
       );
@@ -265,8 +276,33 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
       </aside>
 
       <div className="mainwrap">
-        <div className="banner">
-          ● Working locally — data on this machine, read-only, nothing exposed.
+        {/* The consequences of the current configuration, stated where the work happens.
+            Settings is where you change these; a settings page is not where anyone
+            learns what they mean. */}
+        <div className={loaded.writable.length > 0 ? 'banner writable' : 'banner'}>
+          <span>● Data on this machine.</span>
+          <span>
+            {loaded.models.selectedName === null ? (
+              <>No model chosen — <b>Ask</b> needs one; SQL and completions do not.</>
+            ) : loaded.models.selected?.locality === 'local' ? (
+              <>Questions answered by <b>{loaded.models.selectedName}</b>, running here. No data leaves, nothing is billed.</>
+            ) : (
+              <>
+                Questions answered by <b>{loaded.models.selectedName}</b> — your schema is sent to
+                {' '}{loaded.models.selected?.provider}, billed to your key. Never your rows.
+              </>
+            )}
+          </span>
+          <span>
+            {loaded.writable.length === 0 ? (
+              <>Read-only: nothing here can change your data.</>
+            ) : (
+              <>
+                <b>Writes enabled</b> on {loaded.writable.length} dataset(s) — changes still need
+                confirming in Changes.
+              </>
+            )}
+          </span>
         </div>
         <div className="mtop">
           <h1>{current.title}</h1>
@@ -307,33 +343,10 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           )}
 
           {nav === 'meaning' && (
-            <>
-              <div className="subnav">
-                <button
-                  data-meaning="dictionary"
-                  className={meaningTab === 'dictionary' ? 'on' : ''}
-                  onClick={() => setMeaningTab('dictionary')}
-                >
-                  Dictionary
-                </button>
-                <button
-                  data-meaning="learn"
-                  className={meaningTab === 'learn' ? 'on' : ''}
-                  onClick={() => setMeaningTab('learn')}
-                >
-                  How it works
-                </button>
-              </div>
-              {meaningTab === 'dictionary' ? (
-                <Dictionary
-                  api={api}
-                  sources={loaded.sources.filter((s) => s.datasetId === activeId)}
-                />
-              ) : (
-                <Learn api={api} />
-              )}
-            </>
+            <Dictionary api={api} sources={loaded.sources.filter((s) => s.datasetId === activeId)} />
           )}
+
+          {nav === 'learn' && <Learn api={api} />}
 
           {nav === 'activity' && <Activity api={api} />}
           {nav === 'changes' && <Edit api={api} datasets={loaded.datasets} onChanged={() => void refresh()} />}

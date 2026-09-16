@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  completionsAt, referencedTables, starterSql, suggestQuestions,
-  type AskResult, type CompletionResult, type QueryResult, type SchemaGraph,
-  type Suggestion, type TraceRecord, type TraceStage,
+  completionsAt, explainRefusal, referencedTables, starterSql, suggestQuestions,
+  type AskResult, type CompletionResult, type QueryResult, type RefusalExplanation,
+  type SchemaGraph, type Suggestion, type TouchedSummary, type TraceRecord, type TraceStage,
 } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 import { SchemaMap } from './SchemaMap.js';
@@ -42,6 +42,8 @@ export function Query({
   const [result, setResult] = useState<QueryResult | null>(null);
   const [history, setHistory] = useState<readonly TraceRecord[]>([]);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const [refusal, setRefusal] = useState<RefusalExplanation | null>(null);
+  const [touched, setTouched] = useState<TouchedSummary | null>(null);
   const [busy, setBusy] = useState<'ask' | 'run' | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showMap, setShowMap] = useState(true);
@@ -85,6 +87,9 @@ export function Query({
   const report = (e: unknown): void => {
     const err = e as { code?: string; message?: string };
     setError({ code: err.code ?? 'UNKNOWN', message: err.message ?? String(e) });
+    // A refusal is the best teaching moment the product gets — it arrives exactly when
+    // someone tried the dangerous thing. Spending it on an error code wastes it.
+    setRefusal(explainRefusal(e));
   };
 
   const ask = useCallback(
@@ -92,6 +97,8 @@ export function Query({
       if (text.trim().length === 0) return;
       setBusy('ask');
       setError(null);
+      setRefusal(null);
+      setTouched(null);
       setAnswer(null);
       setResult(null);
       try {
@@ -99,7 +106,10 @@ export function Query({
         setAnswer(next);
         // The whole point of the merge: the generated SQL lands in the editor, where it
         // can be read and changed, rather than behind a button.
-        if (next.sql !== null) setSql(next.sql);
+        if (next.sql !== null) {
+          setSql(next.sql);
+          setTouched(await describe(api, datasetId, next.sql, next.rows.length));
+        }
       } catch (e) {
         report(e);
       } finally {
@@ -113,10 +123,14 @@ export function Query({
   const run = useCallback(async () => {
     setBusy('run');
     setError(null);
+    setRefusal(null);
+    setTouched(null);
     setResult(null);
     setAnswer(null);
     try {
-      setResult(await api.query(datasetId, sql));
+      const next = await api.query(datasetId, sql);
+      setResult(next);
+      setTouched(await describe(api, datasetId, sql, next.rows.length));
     } catch (e) {
       report(e);
     } finally {
@@ -318,6 +332,15 @@ export function Query({
         </div>
       )}
 
+      {refusal !== null && (
+        <div className="refusal" data-refusal>
+          <div className="rfh">What that would have done</div>
+          <p className="rfw">This statement would {refusal.whatItWouldHaveDone}</p>
+          <div className="rfh">What to do instead</div>
+          <p className="rfw">{refusal.whatToDoInstead}</p>
+        </div>
+      )}
+
       {answer !== null && !answer.answerable && (
         <div className="flag" role="status">
           <b>Datera did not answer this.</b>
@@ -360,6 +383,8 @@ export function Query({
         </div>
       )}
 
+      {touched !== null && touched.shape !== 'none' && <Touched summary={touched} />}
+
       {result !== null && (
         <div className="sqlres">
           <ResultTable columns={result.columns.map((c) => c.name)} rows={result.rows} />
@@ -378,6 +403,68 @@ export function Query({
       )}
     </div>
   );
+}
+
+/**
+ * What the query actually read — asked of the engine, not inferred from the text.
+ *
+ * A result table shows numbers. It does not show that two tables were joined on a key, or
+ * which rows a filter let through, and those are exactly the two places a plausible wrong
+ * answer comes from. Naming them turns the result into something checkable.
+ */
+function Touched({ summary }: { readonly summary: TouchedSummary }): JSX.Element {
+  return (
+    <div className="touched" data-touched>
+      <div className="tch">
+        {summary.shape === 'join'
+          ? `This joined ${summary.tables.length} tables.`
+          : 'This read one table.'}
+      </div>
+
+      {summary.joinPath.length > 0 && (
+        <p className="tcw">
+          Joined on {summary.joinPath.join(', ')}. A row appears in the result only where both
+          sides matched — anything without a match on the other side is silently absent, which is
+          the usual reason a joined total comes out lower than expected.
+        </p>
+      )}
+
+      {summary.filter !== null && (
+        <p className="tcw">
+          Filtered by <span className="mono">{summary.filter}</span>
+          {summary.rowsScanned !== null && (
+            <> — {summary.rowsScanned.toLocaleString()} rows were examined and{' '}
+            {summary.rowsReturned.toLocaleString()} matched.</>
+          )}
+        </p>
+      )}
+
+      <div className="tcc">
+        {summary.tables.map((table) => (
+          <span className="tct" key={table.table}>
+            {table.table}
+            <i>
+              {table.columns
+                .filter((c) => c.role !== null)
+                .map((c) => `${c.column} (${c.role})`)
+                .join(' · ')}
+            </i>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Ask the engine what a statement touched. Never fatal: it is an explanation, not a result. */
+async function describe(
+  api: DateraApi, datasetId: string, sql: string, rows: number,
+): Promise<TouchedSummary | null> {
+  try {
+    return await api.explainTouched(datasetId, sql, rows);
+  } catch {
+    return null;
+  }
 }
 
 function Suggested({

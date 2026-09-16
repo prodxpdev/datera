@@ -152,6 +152,41 @@ describe('Ask and the transparency drawer', () => {
     await expect.poll(async () => page.textContent('.query'), { timeout: 20_000 }).toMatch(/READ_ONLY_VIOLATION|read-only/i);
   });
 
+  it('explains a refusal by what it would have done, not just the rule that fired', async () => {
+    // The error code names the rule. Someone learning what a database is needs the
+    // consequence — and the refusal lands at the one moment they are certainly reading.
+    //
+    // `orders` here is a view over a CSV, so DuckDB cannot bind the DELETE and the guard
+    // genuinely does not know the statement kind. The explanation must say what it does
+    // know — this changes rather than reads, and could not be proven a read — and must
+    // NOT invent "DELETE" from the text, because inferring a statement kind from text is
+    // exactly what the guard refuses to do.
+    const explanation = await page.textContent('[data-refusal]');
+    expect(explanation).toMatch(/change/i);
+    expect(explanation).toMatch(/could not prove|read/i);
+    expect(explanation).toMatch(/working copy|Changes/i);
+    expect(explanation).not.toMatch(/\d+ rows/);
+  });
+
+  it('says what a successful query actually touched', async () => {
+    await page.fill('.sqled textarea', "SELECT product FROM orders WHERE revenue_cents > 100");
+    await page.click('[data-runsql]');
+    await page.waitForSelector('[data-touched]', { timeout: 20_000 });
+
+    const touched = await page.textContent('[data-touched]');
+    expect(touched).toContain('orders');
+    // The filter is where a plausible wrong answer comes from, so it is named.
+    expect(touched).toMatch(/revenue_cents/);
+    expect(touched).toMatch(/examined|matched|read one table/i);
+  });
+
+  it('states which model answers questions, and what that costs, where the work happens', async () => {
+    const banner = await page.textContent('.banner');
+    expect(banner).toContain('llama3.1:8b');
+    expect(banner).toMatch(/running here|No data leaves/i);
+    expect(banner).toMatch(/read-only/i);
+  });
+
   it('lists model tiers in the Models view without revealing any key', async () => {
     // Models moved into Settings — it is setup, not a place you work.
     await page.click('[data-nav="settings"]');
