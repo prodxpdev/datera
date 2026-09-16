@@ -129,6 +129,9 @@ export { completionsAt, referencedTables, starterSql } from './query/schema-grap
 export { suggestQuestions } from './query/suggest.js';
 export { sheetNamesFrom } from './sources/workbook.js';
 export {
+  ACTIVITY_DATASET_ID, ACTIVITY_DATASET_NAME, ACTIVITY_DATASET_SCHEMA,
+} from './datasets/types.js';
+export {
   assertOperationName, assertParametersMatch, bindArguments, inlineArguments,
   operationTool, placeholdersIn,
 } from './serve/operations.js';

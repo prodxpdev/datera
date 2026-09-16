@@ -231,7 +231,7 @@ describe('connect and ingest', () => {
       const [source] = await ws.datera.addSource({ type: 'file', path: fixtures.ordersCsv });
       expect(source?.datasetId).toBe(DEFAULT_DATASET_ID);
 
-      const datasets = await ws.datera.listDatasets();
+      const datasets = (await ws.datera.listDatasets()).filter((d) => d.kind !== 'system');
       expect(datasets).toHaveLength(1);
       expect(datasets[0]).toMatchObject({ id: DEFAULT_DATASET_ID, isDefault: true, schemaName: 'ds_ungrouped' });
     });

@@ -69,7 +69,8 @@ describe('§7 normalization', () => {
 
   it('proposing alone changes nothing', async () => {
     await ws.datera.proposeNormalization(sourceId);
-    expect(await ws.datera.listDatasets()).toHaveLength(1);
+    // No *new* dataset. The activity log is Datera's own and predates the proposal.
+    expect((await ws.datera.listDatasets()).filter((d) => d.kind !== 'system')).toHaveLength(1);
     expect(await ws.datera.listTables(DEFAULT_DATASET_ID)).toEqual(['sheet']);
   });
 

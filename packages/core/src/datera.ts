@@ -22,6 +22,10 @@ import {
   DEFAULT_DATASET_ID,
   DEFAULT_DATASET_NAME,
   DEFAULT_DATASET_SCHEMA,
+  ACTIVITY_DATASET_ID,
+  ACTIVITY_DATASET_SCHEMA,
+  ACTIVITY_DATASET_NAME,
+  ACTIVITY_DATASET_DESCRIPTION,
   type Dataset,
 } from './datasets/types.js';
 import {
@@ -324,6 +328,7 @@ export class Datera {
       options.ports.http ?? new OfflineHttp(),
     );
     await datera.ensureDefaultDataset();
+    await datera.ensureActivityDataset();
     await datera.reattachDatabases();
     return datera;
   }
@@ -376,6 +381,42 @@ export class Datera {
     };
     await this.engine.executeInternal(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(dataset.schemaName)}`);
     await this.catalog.insertDataset(dataset);
+  }
+
+  /**
+   * Publish the request log as a dataset (§8a).
+   *
+   * A view rather than a copy, so it is always current and costs nothing to keep in sync.
+   * Exactly one view in the schema: the dataset boundary is the mechanism that keeps the
+   * rest of `_datera` unreachable, so putting anything else here would quietly widen what
+   * a user query can touch.
+   *
+   * Runs on every open rather than once, so a workspace created before this existed picks
+   * it up, and so a renamed column in the log is reflected without a migration.
+   */
+  private async ensureActivityDataset(): Promise<void> {
+    await this.engine.executeInternal(
+      `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(ACTIVITY_DATASET_SCHEMA)}`,
+    );
+    await this.engine.executeInternal(`
+      CREATE OR REPLACE VIEW ${qualified(ACTIVITY_DATASET_SCHEMA, 'requests')} AS
+        SELECT id, occurred_at, origin, dataset_id, question, route, model_name,
+               sql, total_ms, input_tokens, output_tokens, cost_usd, rows_returned,
+               ok, error
+        FROM _datera.trace_log`);
+
+    const existing = (await this.catalog.listDatasets()).find((d) => d.id === ACTIVITY_DATASET_ID);
+    if (existing !== undefined) return;
+
+    await this.catalog.insertDataset({
+      id: ACTIVITY_DATASET_ID,
+      name: ACTIVITY_DATASET_NAME,
+      description: ACTIVITY_DATASET_DESCRIPTION,
+      schemaName: ACTIVITY_DATASET_SCHEMA,
+      isDefault: false,
+      kind: 'system',
+      createdAt: this.ports.clock.now().toISOString(),
+    });
   }
 
   // ----------------------------------------------------------------- sources
@@ -768,11 +809,26 @@ export class Datera {
     await assertReadOnlySql(this.engine.classificationConnection(), sql);
     await this.assertScoped(sql, dataset);
 
-    const { resultSet, check, durationMs } = await this.engine.executeUserQuery(
-      sql,
-      () => this.ports.clock.monotonicMs(),
-      params,
+    const trace = new TraceBuilder(
+      this.makeId(), datasetId, sql,
+      this.ports.clock.now().toISOString(), () => this.ports.clock.monotonicMs(),
     );
+    trace.add({ kind: 'guard', label: 'Read-only check', detail: 'passed' });
+
+    let executed;
+    try {
+      executed = await this.engine.executeUserQuery(
+        sql,
+        () => this.ports.clock.monotonicMs(),
+        params,
+      );
+    } catch (e) {
+      await this.recordQuery(trace, datasetId, 0, false, (e as { message?: string }).message);
+      throw e;
+    }
+
+    const { resultSet, check, durationMs } = executed;
+    await this.recordQuery(trace, datasetId, resultSet.rows.length, true);
 
     return {
       datasetId,
@@ -1191,6 +1247,16 @@ export class Datera {
     const current = await this.getDataset(source.datasetId);
 
     if (current.id === target.id) return source;
+
+    if (target.kind === 'system' || target.kind === 'derived') {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        `"${target.name}" does not hold connected sources — it is ${
+          target.kind === 'system' ? "Datera's own record of what it did" : 'a working copy of another dataset'
+        }.`,
+        { targetDatasetId, kind: target.kind },
+      );
+    }
 
     const name = await this.uniqueName(target.id, source.name);
 
@@ -1709,6 +1775,8 @@ export class Datera {
     const dataset = await this.getDataset(datasetId);
 
     if (dataset.kind !== 'connected') {
+      // Including 'system', which grantWrite refuses with the reason. Deriving a working
+      // copy of the activity log would be an absurd thing to do quietly.
       await this.grantWrite(dataset.id);
       return { datasetId: dataset.id, derived: false };
     }
@@ -1728,6 +1796,15 @@ export class Datera {
 
   async grantWrite(datasetId: string): Promise<void> {
     const dataset = await this.getDataset(datasetId);
+
+    if (dataset.kind === 'system') {
+      throw new DateraError(
+        'WRITE_NOT_PERMITTED',
+        `"${dataset.name}" is Datera's own record of what it did. A log you can edit is not a log, so writes cannot be enabled on it.`,
+        { datasetId, kind: dataset.kind },
+      );
+    }
+
     if (dataset.kind === 'connected') {
       throw new DateraError(
         'WRITE_NOT_PERMITTED',
@@ -2347,6 +2424,33 @@ export class Datera {
   }
 
   /** Persist one trace. Called on every request path, so it is deliberately forgiving. */
+  /**
+   * Record a hand-written query in the log.
+   *
+   * Local SQL was not traced at all, which made "every request that ran" untrue of the
+   * thing the product calls its audit log — and left the Query view's own history showing
+   * asks but not runs.
+   *
+   * The activity dataset is skipped, deliberately: reading the log would otherwise append
+   * to the log, so every look at it would change what it says. Self-observation is the one
+   * place where recording less is more honest.
+   */
+  private async recordQuery(
+    trace: TraceBuilder,
+    datasetId: string,
+    rowsReturned: number,
+    ok: boolean,
+    error?: string,
+  ): Promise<void> {
+    if (datasetId === ACTIVITY_DATASET_ID) return;
+    await this.record(trace.build('structured', ok), {
+      origin: 'sql',
+      rowsReturned,
+      ok,
+      ...(error === undefined ? {} : { error }),
+    });
+  }
+
   private async record(
     trace: Trace,
     options: { origin: TraceOrigin; rowsReturned: number; ok: boolean; error?: string },
@@ -2554,6 +2658,14 @@ export class Datera {
     datasetId: string,
     environmentId: string,
   ): Promise<{ ok: true; environment: string }> {
+    if ((await this.getDataset(datasetId)).kind === 'system') {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        "The activity log is this workspace's own record of what it did. Someone else's infrastructure is the last place it should end up by accident.",
+        { datasetId },
+      );
+    }
+
     if (environmentId === LOCAL_ENVIRONMENT_ID) {
       throw new DateraError(
         'INVALID_ARGUMENT',

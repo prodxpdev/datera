@@ -90,7 +90,9 @@ describe('opening a pre-Phase-5 workspace', () => {
   it('adds the missing columns rather than recreating the table', async () => {
     ws = await openTestWorkspace({ workspacePath: root, ports: testPorts() });
 
-    const datasets = await ws.datera.listDatasets();
+    // The user's datasets. Datera's own activity log (§8a) is a system dataset and is
+    // deliberately not counted here — this test is about migrating what a user had.
+    const datasets = (await ws.datera.listDatasets()).filter((d) => d.kind !== 'system');
     expect(datasets).toHaveLength(1);
     expect(datasets[0]?.id).toBe(DEFAULT_DATASET_ID);
     // The existing row survived, with its original values.
