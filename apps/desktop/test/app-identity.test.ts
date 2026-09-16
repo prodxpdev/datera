@@ -136,3 +136,40 @@ describe('application identity', () => {
     expect(manifest.build?.appId).toMatch(/^[a-z0-9.-]+$/);
   });
 });
+
+/**
+ * A test instance must not be able to outlive its run.
+ *
+ * Written after three wedged instances survived `app.close()`, SIGTERM, and nearly three
+ * hours — a hung app the user has to hunt down is a worse failure than the test failure
+ * that caused it.
+ */
+describe('headless watchdog', () => {
+  it('exits on its own when the deadline passes', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'datera-watchdog-'));
+    const instance = await electron.launch({
+      args: [appRoot],
+      env: {
+        ...process.env,
+        DATERA_WORKSPACE: workspace,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
+        DATERA_HEADLESS: '1',
+        // Seconds rather than the ten-minute default, so the test is a test.
+        DATERA_HEADLESS_MAX_MS: '3000',
+      },
+    });
+
+    try {
+      const exited = new Promise<void>((resolve) => instance.on('close', () => resolve()));
+      await expect(
+        Promise.race([
+          exited,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('still running')), 30_000)),
+        ]),
+      ).resolves.toBeUndefined();
+    } finally {
+      await instance.close().catch(() => undefined);
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }, 60_000);
+});

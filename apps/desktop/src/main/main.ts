@@ -361,6 +361,27 @@ function createWindow(): void {
  */
 const headless = process.env['DATERA_HEADLESS'] === '1';
 
+/**
+ * A test instance must not outlive its test run.
+ *
+ * Observed: three instances wedged during window creation, ignored the suite's
+ * `app.close()`, ignored SIGTERM, and were still running nearly three hours later. A
+ * hung app the user has to hunt down with `kill -9` is a worse failure than the test
+ * failure that caused it.
+ *
+ * `app.exit` rather than `app.quit`: quit is cooperative and asks windows to close, which
+ * is precisely what a wedged instance will not do. The timer is unref'd so it never keeps
+ * a healthy process alive on its own.
+ */
+function installTestWatchdog(): void {
+  if (!headless) return;
+  const limitMs = Number(process.env['DATERA_HEADLESS_MAX_MS'] ?? 10 * 60_000);
+  setTimeout(() => {
+    console.error(`[datera] headless watchdog: exiting after ${limitMs}ms`);
+    app.exit(1);
+  }, limitMs).unref();
+}
+
 function setDockIcon(): void {
   if (process.platform !== 'darwin' || app.dock === undefined) return;
 
@@ -378,6 +399,7 @@ function setDockIcon(): void {
 
 app.whenReady().then(async () => {
   setDockIcon();
+  installTestWatchdog();
 
   // A local-first tool has no reason to let its own UI reach the network. This is defence
   // in depth for invariant §1.6, not the mechanism: the engine's extension handling is.
