@@ -29,7 +29,7 @@ type Bridge = Record<string, (...args: unknown[]) => Promise<Envelope>>;
 const METHODS = [
   'engineInfo', 'listDatasets', 'listSources', 'addSource', 'removeSource',
   'getSchema', 'preview', 'query', 'pickFiles',
-  'ask', 'listModels', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
+  'ask', 'listModels', 'downloadBundledModel', 'removeBundledModel', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
   'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmColumns', 'confirmEntity', 'schemaGraph',
   'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',
   'explainTouched',
@@ -49,6 +49,15 @@ const METHODS = [
 
 export function createApi(bridge: Bridge): DateraApi {
   const api: Record<string, unknown> = {};
+
+  // Not an invoke, so it does not go through the envelope loop: a subscription returns an
+  // unsubscribe function rather than a promise.
+  api['onBundledProgress'] = (listener: (progress: unknown) => void): (() => void) => {
+    const subscribe = (bridge as unknown as {
+      onBundledProgress?: (l: (p: unknown) => void) => () => void;
+    }).onBundledProgress;
+    return subscribe?.(listener) ?? ((): void => undefined);
+  };
 
   for (const method of METHODS) {
     api[method] = async (...args: unknown[]): Promise<unknown> => {

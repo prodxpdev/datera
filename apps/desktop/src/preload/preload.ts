@@ -28,6 +28,9 @@ const IPC = {
   pickFiles: 'datera:pickFiles',
   ask: 'datera:ask',
   listModels: 'datera:listModels',
+  downloadBundledModel: 'datera:downloadBundledModel',
+  removeBundledModel: 'datera:removeBundledModel',
+  bundledProgress: 'datera:bundledProgress',
   setChatModel: 'datera:setChatModel',
   setApiKey: 'datera:setApiKey',
   hasApiKey: 'datera:hasApiKey',
@@ -106,6 +109,8 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   pickFiles: () => call(IPC.pickFiles),
   ask: (datasetId: string, question: string, opts?: unknown) => call(IPC.ask, datasetId, question, opts),
   listModels: () => call(IPC.listModels),
+  downloadBundledModel: (id: string) => call(IPC.downloadBundledModel, id),
+  removeBundledModel: (id: string) => call(IPC.removeBundledModel, id),
   setChatModel: (model: unknown) => call(IPC.setChatModel, model),
   setApiKey: (provider: string, key: string) => call(IPC.setApiKey, provider, key),
   hasApiKey: (provider: string) => call(IPC.hasApiKey, provider),
@@ -167,4 +172,18 @@ contextBridge.exposeInMainWorld('dateraBridge', {
   undoWrite: (writeId: string) => call(IPC.undoWrite, writeId),
   listWrites: (id: string) => call(IPC.listWrites, id),
   listTables: (id: string) => call(IPC.listTables, id),
+
+  /**
+   * Download progress, pushed from the main process.
+   *
+   * A subscription rather than a promise: a two-gigabyte download with no visible
+   * progress is indistinguishable from a hang. The listener is wrapped so the renderer
+   * never receives the Electron event object — only the payload — because handing a
+   * sandboxed page an IPC event is handing it a sender it should not have.
+   */
+  onBundledProgress: (listener: (progress: unknown) => void) => {
+    const wrapped = (_event: unknown, progress: unknown): void => listener(progress);
+    ipcRenderer.on(IPC.bundledProgress, wrapped);
+    return () => ipcRenderer.removeListener(IPC.bundledProgress, wrapped);
+  },
 });

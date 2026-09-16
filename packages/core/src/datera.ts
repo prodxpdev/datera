@@ -96,6 +96,11 @@ import {
 import {
   OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel, type EmbeddingModel,
 } from './models/embeddings.js';
+import {
+  BUNDLED_MODELS, BundledChatModel, bundledModel,
+  type BundledModelSpec,
+} from './models/bundled.js';
+import type { LocalModelStatus } from './ports/llm.js';
 import { draftDictionary } from './dictionary/draft.js';
 import type { GraphTable, SchemaGraph } from './query/schema-graph.js';
 import {
@@ -180,7 +185,22 @@ export interface ToolResult {
 /** Keychain entry holding the API key for a remote provider. One per provider. */
 export const apiKeySecretName = (provider: string): string => `model.apiKey.${provider}`;
 
+/** A bundled model, with what it would cost this machine in disk and memory. */
+export interface BundledModelOffer {
+  readonly modelId: string;
+  readonly spec: BundledModelSpec;
+  readonly ready: boolean;
+  readonly bytesOnDisk: number;
+  readonly unavailableReason: string | null;
+}
+
 export interface ModelCatalogue {
+  /**
+   * The bundled tier (§9 tier 1). Empty when the host supplies no runtime — a model that
+   * cannot run must not appear in a picker, because offering it and failing at call time
+   * teaches the user the product is broken rather than that their host lacks the port.
+   */
+  readonly bundled: readonly BundledModelOffer[];
   /** Runtimes found on this machine right now. Empty is a normal result, not an error. */
   readonly detected: readonly DetectedRuntime[];
   /** Remote providers the user has a stored key for. */
@@ -712,6 +732,7 @@ export class Datera {
    */
   async listModels(): Promise<ModelCatalogue> {
     const detected = await detectLocalRuntimes({ http: this.http });
+    const bundled = await this.bundledOffers();
 
     const remote: ModelDescriptor[] = [];
     for (const [provider, ids] of Object.entries(KNOWN_REMOTE_MODELS)) {
@@ -733,6 +754,7 @@ export class Datera {
       .map((m) => ({ ...m, role: 'embedding' as const }));
 
     return {
+      bundled,
       detected,
       remote,
       selected,
@@ -874,6 +896,62 @@ export class Datera {
     await this.ports.secrets.delete(apiKeySecretName(provider));
   }
 
+  /**
+   * What the host can actually run, joined to what each model costs.
+   *
+   * Never throws: a runtime that cannot report its status yields an unavailable entry
+   * with the reason attached, because "we could not ask" is information a user can act
+   * on and an exception in the model picker is not.
+   */
+  private async bundledOffers(): Promise<readonly BundledModelOffer[]> {
+    const llm = this.ports.llm;
+    if (llm === undefined) return [];
+
+    let statuses: readonly LocalModelStatus[];
+    try {
+      statuses = await llm.status();
+    } catch (e) {
+      this.ports.logger.log('warn', 'Local model runtime could not report status', {
+        error: (e as { message?: string }).message ?? String(e),
+      });
+      return [];
+    }
+
+    const byId = new Map(statuses.map((s) => [s.modelId, s]));
+    return BUNDLED_MODELS.map((spec) => {
+      const status = byId.get(spec.id);
+      return {
+        modelId: spec.id,
+        spec,
+        ready: status?.ready ?? false,
+        bytesOnDisk: status?.bytesOnDisk ?? 0,
+        unavailableReason: status?.unavailableReason ?? null,
+      };
+    });
+  }
+
+  /** Fetch and verify a bundled model's weights (§9, D-08: fetched on first run). */
+  async downloadBundledModel(
+    modelId: string,
+    onProgress?: (progress: { receivedBytes: number; totalBytes: number }) => void,
+  ): Promise<void> {
+    const llm = this.ports.llm;
+    if (llm === undefined) {
+      throw new DateraError(
+        'MODEL_UNAVAILABLE',
+        'This host has no local model runtime, so bundled models cannot be downloaded here.',
+      );
+    }
+    const spec = bundledModel(modelId);
+    this.ports.logger.log('info', 'Downloading bundled model', { modelId, bytes: spec.sizeBytes });
+    await llm.ensure(modelId, (p) => onProgress?.({ receivedBytes: p.receivedBytes, totalBytes: p.totalBytes }));
+  }
+
+  async removeBundledModel(modelId: string): Promise<void> {
+    if (this.ports.llm === undefined) return;
+    await this.ports.llm.remove(bundledModel(modelId).id);
+  }
+
   private async selectedChatModelDescriptor(): Promise<ModelDescriptor | null> {
     const raw = await this.catalog.getSetting(CHAT_MODEL_SETTING);
     if (raw === null) return null;
@@ -888,6 +966,13 @@ export class Datera {
   private async chatModel(): Promise<ChatModel | null> {
     const descriptor = await this.selectedChatModelDescriptor();
     if (descriptor === null) return null;
+
+    // The bundled tier first: it is the only one that needs no key and no network, so it
+    // is also the only one that can be selected on a machine that has neither.
+    if (descriptor.tier === 'bundled') {
+      if (this.ports.llm === undefined) return null;
+      return new BundledChatModel(this.ports.llm, bundledModel(descriptor.id));
+    }
 
     if (descriptor.provider === 'anthropic') {
       const apiKey = await this.ports.secrets.get(apiKeySecretName('anthropic'));

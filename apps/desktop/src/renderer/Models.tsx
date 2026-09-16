@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ModelCatalogue, ModelDescriptor } from '@datera/core';
+import type { BundledModelOffer, ModelCatalogue, ModelDescriptor } from '@datera/core';
+import { bundledDescriptor } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 
 /**
@@ -19,6 +20,10 @@ const REMOTE_PROVIDERS: readonly { id: string; label: string; hint: string }[] =
   { id: 'openai', label: 'OpenAI', hint: 'sk-…' },
 ];
 
+function gb(bytes: number): string {
+  return (bytes / 1024 ** 3).toFixed(1);
+}
+
 export function Models({
   api,
   datasetId,
@@ -33,6 +38,8 @@ export function Models({
   const [note, setNote] = useState<string | null>(null);
   const [embedded, setEmbedded] = useState<{ chunks: number; columns: readonly string[] } | null>(null);
   const [embedding, setEmbedding] = useState(false);
+  const [downloading, setDownloading] = useState<Record<string, number>>({});
+  const [failed, setFailed] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -53,6 +60,42 @@ export function Models({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Progress is pushed from the main process: a two-gigabyte download with no visible
+  // progress is indistinguishable from a hang, which is exactly the complaint in #33.
+  useEffect(
+    () =>
+      api.onBundledProgress(({ modelId, receivedBytes, totalBytes }) => {
+        setDownloading((prev) => ({
+          ...prev,
+          [modelId]: totalBytes === 0 ? 0 : receivedBytes / totalBytes,
+        }));
+      }),
+    [api],
+  );
+
+  const download = useCallback(
+    async (offer: BundledModelOffer) => {
+      setFailed(null);
+      setDownloading((prev) => ({ ...prev, [offer.modelId]: 0 }));
+      try {
+        await api.downloadBundledModel(offer.modelId);
+        setNote(`${offer.spec.label} is ready. It runs on this machine, with no key.`);
+        await refresh();
+      } catch (e) {
+        // Verification failures land here, and they matter: the honest thing is to say
+        // the file was rejected, not to quietly leave the model un-downloaded.
+        setFailed((e as { message?: string }).message ?? String(e));
+      } finally {
+        setDownloading((prev) => {
+          const next = { ...prev };
+          delete next[offer.modelId];
+          return next;
+        });
+      }
+    },
+    [api, refresh],
+  );
 
   const choose = useCallback(
     async (model: ModelDescriptor) => {
@@ -93,15 +136,89 @@ export function Models({
       <section className="tier">
         <h3>1 · Bundled local</h3>
         <p className="tierdesc">
-          No key, no account, nothing uploaded. Weights are fetched once on first run.
+          No key, no account, nothing uploaded — and no network at all once the weights are
+          here. Apache-2.0 licensed, so they are yours to keep and redistribute.
         </p>
-        <div className="opt off">
-          <span className="radio" />
-          <div>
-            <div className="ot">Bundled model</div>
-            <div className="od">Not available in this build — see the Phase 2 notes in the README.</div>
+
+        {failed !== null && <div className="err" role="alert">{failed}</div>}
+
+        {catalogue.bundled.length === 0 ? (
+          <div className="emptyrail">
+            This build has no local model runtime, so the bundled tier is unavailable here.
           </div>
-          <span className="tg free">no key</span>
+        ) : (
+          catalogue.bundled.map((offer) => {
+            const progress = downloading[offer.modelId];
+            const selected = selectedId === offer.modelId;
+
+            return (
+              <div
+                key={offer.modelId}
+                className={`opt ${selected ? 'on' : ''} ${offer.ready ? '' : 'off'}`}
+                data-bundled={offer.modelId}
+                onClick={() => {
+                  if (offer.ready && offer.unavailableReason === null) {
+                    void choose(bundledDescriptor(offer.spec));
+                  }
+                }}
+              >
+                <span className="radio" />
+                <div>
+                  <div className="ot">{offer.spec.label}</div>
+                  {/* The trade-off is carried as data on the spec, so the picker cannot
+                      describe a model more flatteringly than the catalogue does. */}
+                  <div className="od">{offer.spec.tradeoff}</div>
+                  {offer.unavailableReason !== null && (
+                    <div className="od warnline">{offer.unavailableReason}</div>
+                  )}
+                  {progress !== undefined && (
+                    <div className="dlbar" data-progress={offer.modelId}>
+                      <span style={{ width: `${Math.round(progress * 100)}%` }} />
+                      <i>{Math.round(progress * 100)}% of {gb(offer.spec.sizeBytes)} GB</i>
+                    </div>
+                  )}
+                </div>
+
+                <span className="tg free">no key</span>
+
+                {offer.ready ? (
+                  <button
+                    className="btn"
+                    data-remove-bundled={offer.modelId}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void api.removeBundledModel(offer.modelId).then(refresh);
+                    }}
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <button
+                    className="btn p"
+                    data-download={offer.modelId}
+                    disabled={progress !== undefined || offer.unavailableReason !== null}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void download(offer);
+                    }}
+                  >
+                    {progress === undefined ? `Download ${gb(offer.spec.sizeBytes)} GB` : 'Downloading…'}
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
+
+        {/* §9 requires this said where the choice is made. A 3B writes weaker SQL than a
+            frontier model — measured on this project, a local 14B divided before summing
+            where Claude divided after. Leaving it out would make the default feel broken
+            rather than understood. */}
+        <div className="caveat">
+          <b>These are small models.</b> They write weaker SQL than a frontier model — more so on
+          joins and on anything needing a unit conversion. That is why a confirmed dictionary and
+          the visible SQL matter <i>more</i> on this tier, not less: you can see what it wrote
+          before it runs, and say what your columns mean so it does not have to guess.
         </div>
       </section>
 

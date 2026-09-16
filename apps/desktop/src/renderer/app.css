@@ -612,3 +612,9 @@
   padding: 4px 9px; color: var(--ink2); min-width: 0; overflow-wrap: anywhere;
 }
 .tct i { color: var(--ink3); font-style: normal; font-size: 10px; display: block; margin-top: 2px; }
+
+/* Download progress for a bundled model. Two gigabytes with no feedback reads as a hang. */
+.dlbar { position: relative; height: 16px; margin-top: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; max-width: 280px; }
+.dlbar span { display: block; height: 100%; background: var(--indigo-bg); border-right: 1px solid var(--indigo-line); transition: width .25s ease; }
+.dlbar i { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9.5px; font-style: normal; color: var(--ink2); }
+.warnline { color: var(--amber); }

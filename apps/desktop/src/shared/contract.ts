@@ -64,6 +64,12 @@ export interface DateraApi {
   // ---- Phase 2 -----------------------------------------------------------
   ask(datasetId: string, question: string, options?: { topK?: number }): Promise<AskResult>;
   listModels(): Promise<ModelCatalogue>;
+  downloadBundledModel(modelId: string): Promise<void>;
+  removeBundledModel(modelId: string): Promise<void>;
+  /** Subscribe to download progress. Returns an unsubscribe function. */
+  onBundledProgress(
+    listener: (progress: { modelId: string; receivedBytes: number; totalBytes: number }) => void,
+  ): () => void;
   setChatModel(model: ModelDescriptor): Promise<void>;
   setApiKey(provider: string, apiKey: string): Promise<void>;
   hasApiKey(provider: string): Promise<boolean>;
@@ -156,6 +162,9 @@ export const IPC = {
   pickFiles: 'datera:pickFiles',
   ask: 'datera:ask',
   listModels: 'datera:listModels',
+  downloadBundledModel: 'datera:downloadBundledModel',
+  removeBundledModel: 'datera:removeBundledModel',
+  bundledProgress: 'datera:bundledProgress',
   setChatModel: 'datera:setChatModel',
   setApiKey: 'datera:setApiKey',
   hasApiKey: 'datera:hasApiKey',

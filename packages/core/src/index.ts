@@ -116,6 +116,11 @@ export { redactSecrets } from './models/redact.js';
 // ------------------------------------------------------------- query (§5)
 export type { AskResult, Citations } from './query/ask.js';
 export type { Trace, TraceStage, StageKind, Route } from './query/trace.js';
+export {
+  BUNDLED_MODELS, DEFAULT_BUNDLED_MODEL_ID, SQL_GRAMMAR,
+  BundledChatModel, bundledDescriptor, bundledModel,
+} from './models/bundled.js';
+export type { BundledModelSpec } from './models/bundled.js';
 export { buildSchemaContext, summariseSchemas, SYSTEM_PROMPT } from './query/context.js';
 export { extractSql } from './query/sql-extract.js';
 export { assertWithinDataset, extractTableReferences } from './query/scope.js';
@@ -168,5 +173,5 @@ export { deriveLifecycle } from './teaching/derive.js';
 export type { Lifecycle, LifecycleLayer, LifecycleTransform, LifecycleLane } from './teaching/lifecycle.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
-export type { ModelCatalogue } from './datera.js';
+export type { ModelCatalogue, BundledModelOffer } from './datera.js';
 export { apiKeySecretName } from './datera.js';

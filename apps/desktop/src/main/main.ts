@@ -14,6 +14,7 @@ import {
   NodeFileSystem,
   SystemClock,
   NodeHttp,
+  NodeLocalLlm,
   nodeDuckDBDriver,
   resolveExtensionDirectory,
 } from '@datera/node-runtime';
@@ -69,6 +70,10 @@ async function openCore(): Promise<Datera> {
       // The desktop client is allowed to reach model providers the user has chosen.
       // Datera Server will supply its own, env-configured (spec §9).
       http: new NodeHttp(),
+      // Weights live in the app's data directory, not the workspace: they are machine
+      // state, shared across workspaces, and nobody wants two gigabytes copied when they
+      // move a project folder.
+      llm: new NodeLocalLlm({ directory: join(app.getPath('userData'), 'models') }),
     },
     extensionDirectory: resolveExtensionDirectory(app.isPackaged ? undefined : appRoot),
     appVersion: app.getVersion(),
@@ -128,6 +133,15 @@ function registerHandlers(): void {
     core().ask(datasetId, question, opts ?? {}),
   );
   handle(IPC.listModels, async () => core().listModels());
+  handle(IPC.downloadBundledModel, async (modelId: string) =>
+    core().downloadBundledModel(modelId, (progress) => {
+      // Streamed to the renderer rather than returned: a two-gigabyte download with no
+      // visible progress is indistinguishable from a hang, and #33 is already the bug
+      // report for "it looks frozen".
+      window?.webContents.send(IPC.bundledProgress, { modelId, ...progress });
+    }),
+  );
+  handle(IPC.removeBundledModel, async (modelId: string) => core().removeBundledModel(modelId));
   handle(IPC.setChatModel, async (model: ModelDescriptor) => core().setChatModel(model));
   handle(IPC.setApiKey, async (provider: string, key: string) => core().setApiKey(provider, key));
   handle(IPC.hasApiKey, async (provider: string) => core().hasApiKey(provider));

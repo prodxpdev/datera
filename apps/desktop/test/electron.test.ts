@@ -106,7 +106,7 @@ describe('P1-18/P1-19 Electron shell', () => {
         'confirmEntity', 'confirmRelationship', 'connectConfig', 'createDataset',
         'detectRelationships', 'draftDictionary', 'embeddingStatus', 'engineInfo',
         'explainTouched', 'getDictionary', 'getSchema', 'getTracePayloadCapture',
-        'getTraceRetention', 'hasApiKey', 'listDatasets', 'listModels', 'listRelationships',
+        'getTraceRetention', 'hasApiKey', 'listDatasets', 'listModels', 'downloadBundledModel', 'removeBundledModel', 'onBundledProgress', 'listRelationships',
         'listSources', 'listTools', 'pickFiles', 'preview', 'pruneTraceLog', 'query',
         'queryTraceLog', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',
         'setEmbeddingModel', 'setTracePayloadCapture', 'setTraceRetention',
