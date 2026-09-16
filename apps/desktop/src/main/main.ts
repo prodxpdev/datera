@@ -182,6 +182,7 @@ function registerHandlers(): void {
   handle(IPC.setTracePayloadCapture, async (enabled: boolean) => core().setTracePayloadCapture(enabled));
   handle(IPC.pruneTraceLog, async () => core().pruneTraceLog());
   handle(IPC.listEnvironments, async () => core().listEnvironments());
+  handle(IPC.listReachableDatasets, async () => core().listReachableDatasets());
   handle(IPC.environmentStatuses, async () => core().environmentStatuses());
   handle(IPC.addEnvironment, async (input: never) => core().addEnvironment(input));
   handle(IPC.removeEnvironment, async (id: string) => core().removeEnvironment(id));

@@ -36,7 +36,7 @@ const METHODS = [
   'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',
   'listTools', 'callTool', 'createOperation', 'listOperations', 'deleteOperation', 'callOperation', 'connectConfig', 'queryTraceLog', 'getTraceRetention',
   'setTraceRetention', 'getTracePayloadCapture', 'setTracePayloadCapture', 'pruneTraceLog',
-  'listEnvironments', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
+  'listEnvironments', 'listReachableDatasets', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
   'pushDataset', 'remoteQuery',
   'getLifecycle', 'setLifecycle', 'resetLifecycle',
   'moveSource', 'renameDataset', 'deleteDataset', 'apiEndpoints',

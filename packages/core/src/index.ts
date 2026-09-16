@@ -181,5 +181,7 @@ export { deriveLifecycle } from './teaching/derive.js';
 export type { Lifecycle, LifecycleLayer, LifecycleTransform, LifecycleLane } from './teaching/lifecycle.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
-export type { ModelCatalogue, BundledModelOffer, OperationResult } from './datera.js';
+export type {
+  ModelCatalogue, BundledModelOffer, OperationResult, ReachableDataset,
+} from './datera.js';
 export { apiKeySecretName } from './datera.js';

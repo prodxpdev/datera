@@ -2,7 +2,7 @@
   "name": "@datera/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "The Datera desktop client \u2014 a thin Electron host over @datera/core.",
+  "description": "The Datera desktop client — a thin Electron host over @datera/core.",
   "main": "dist/main/main.js",
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
     "@datera/node-runtime": "workspace:*"
   },
   "devDependencies": {
+    "@datera/cli": "workspace:*",
     "@datera/testkit": "workspace:*",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",

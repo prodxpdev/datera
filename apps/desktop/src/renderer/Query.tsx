@@ -33,6 +33,7 @@ export function Query({
   datasetName,
   datasetKind,
   onChanged,
+  environment,
 }: {
   readonly api: DateraApi;
   readonly datasetId: string;
@@ -40,6 +41,14 @@ export function Query({
   /** 'connected' can never be granted writes (§1.2); 'derived' can. */
   readonly datasetKind: string;
   readonly onChanged: () => void;
+  /**
+   * Set when the selected dataset lives on a Datera Server (§12.10).
+   *
+   * The same editor, the same result table, the same guard — enforced on the server,
+   * which is what makes it a guarantee rather than advice. What changes is where the
+   * statement runs, and the scope line says so rather than letting it look local.
+   */
+  readonly environment?: { id: string; name: string } | undefined;
 }): JSX.Element {
   const [graph, setGraph] = useState<SchemaGraph | null>(null);
   const [sql, setSql] = useState('');
@@ -70,11 +79,16 @@ export function Query({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const next = await api.schemaGraph(datasetId);
+      // A server exposes datasets and queries, not the local schema graph — so remote
+      // work gets an empty graph and the features that depend on it (completions, the
+      // map, suggestions) stand down rather than showing something invented.
+      const next = environment === undefined
+        ? await api.schemaGraph(datasetId)
+        : { datasetId, tables: [], relationships: [] };
       if (cancelled) return;
       setGraph(next);
-      setSql(starterSql(next));
-      setWritable(await api.canWrite(datasetId));
+      setSql(environment === undefined ? starterSql(next) : `SELECT * FROM ${datasetId} LIMIT 20;`);
+      setWritable(environment === undefined ? await api.canWrite(datasetId) : false);
       setAnswer(null);
       setResult(null);
       setError(null);
@@ -84,7 +98,7 @@ export function Query({
     return () => {
       cancelled = true;
     };
-  }, [api, datasetId, loadHistory]);
+  }, [api, datasetId, environment, loadHistory]);
 
   const suggestions = useMemo(
     () => (graph === null ? [] : suggestQuestions(graph)),
@@ -142,6 +156,22 @@ export function Query({
     setProposal(null);
     setTrailer(null);
     try {
+      if (environment !== undefined) {
+        // Straight to the server. Its guard refuses a write there, which is the point:
+        // a client-side check would be advice, and the server enforcing it is the
+        // guarantee §12.10 is about.
+        const remote = await api.remoteQuery(environment.id, datasetId, sql);
+        setResult({
+          datasetId,
+          sql,
+          statementKinds: ['SELECT'],
+          columns: remote.columns,
+          rows: remote.rows,
+          durationMs: remote.durationMs,
+        } as QueryResult);
+        return;
+      }
+
       // Read fresh rather than trusting the cached flag: a grant can be revoked from Data
       // while this view is open, and a stale "writable" would send a refused statement
       // down the propose path and report the wrong reason for stopping.
@@ -166,7 +196,7 @@ export function Query({
       setBusy(null);
       await loadHistory();
     }
-  }, [api, datasetId, sql, loadHistory]);
+  }, [api, datasetId, sql, environment, loadHistory]);
 
   const grantHere = useCallback(async () => {
     setBusy('run');
@@ -250,9 +280,19 @@ export function Query({
 
   return (
     <div className="query">
-      <div className="qscope">
-        Querying <b>{datasetName}</b>. Ask in words or write SQL — both go through the same engine
-        and the same read-only guard, on this machine.
+      <div className="qscope" data-scope>
+        {environment === undefined ? (
+          <>
+            Querying <b>{datasetName}</b>. Ask in words or write SQL — both go through the same
+            engine and the same read-only guard, on this machine.
+          </>
+        ) : (
+          <>
+            Querying <b>{datasetName}</b> on <b>{environment.name}</b> — a Datera Server you run.
+            Same engine, same read-only guard, enforced there rather than here. Completions and
+            the schema map are local features and stand down.
+          </>
+        )}
       </div>
 
       <div className="askbar">

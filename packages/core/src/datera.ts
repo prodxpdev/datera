@@ -223,6 +223,14 @@ export interface OperationResult {
   readonly proposal?: WriteProposal | undefined;
 }
 
+/** A dataset and where it lives, so one picker can offer both. */
+export interface ReachableDataset {
+  readonly environmentId: string;
+  readonly environmentName: string;
+  readonly dataset: Dataset;
+  readonly remote: boolean;
+}
+
 export interface ModelCatalogue {
   /**
    * The bundled tier (§9 tier 1). Empty when the host supplies no runtime — a model that
@@ -2466,6 +2474,47 @@ export class Datera {
   }
 
   /** Reachability for the environment list. Never throws — the UI wants a badge. */
+  /**
+   * Every dataset reachable from here — this machine's, and any server's (§12.10).
+   *
+   * §12.10 says the same UI drives a Datera Server. That has been true of the *interface*
+   * for a while and false of the product: the client could push to a server and check it
+   * was up, but never query one, so a remote dataset was somewhere you sent data rather
+   * than somewhere you worked.
+   *
+   * An unreachable environment contributes nothing and does not throw. A server being
+   * down is a normal condition, not an error in listing what is available.
+   */
+  async listReachableDatasets(): Promise<readonly ReachableDataset[]> {
+    const local = (await this.listDatasets()).map((dataset) => ({
+      environmentId: 'local',
+      environmentName: 'This machine',
+      dataset,
+      remote: false,
+    }));
+
+    const remote: ReachableDataset[] = [];
+    for (const environment of await this.listEnvironments()) {
+      if (environment.kind === 'local') continue;
+      try {
+        const client = await this.connectTo(environment.id);
+        for (const dataset of await client.listDatasets()) {
+          remote.push({
+            environmentId: environment.id,
+            environmentName: environment.name,
+            dataset,
+            remote: true,
+          });
+        }
+      } catch {
+        // Unreachable. Listing what is available should not fail because one server is
+        // down — the Environments view is where that is reported.
+      }
+    }
+
+    return [...local, ...remote];
+  }
+
   async environmentStatuses(): Promise<readonly EnvironmentStatus[]> {
     const environments = await this.listEnvironments();
     const statuses: EnvironmentStatus[] = [];

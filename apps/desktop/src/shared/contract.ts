@@ -2,6 +2,8 @@ import type {
   AuthoredOperation,
   CreateOperationInput,
   OperationResult,
+  ReachableDataset,
+  RemoteQueryResult,
   SchemaGraph,
   AddSourceRequest,
   AskResult,
@@ -118,11 +120,12 @@ export interface DateraApi {
 
   // ---- Phase 8 (client half only) ---------------------------------------
   listEnvironments(): Promise<readonly Environment[]>;
+  listReachableDatasets(): Promise<readonly ReachableDataset[]>;
   environmentStatuses(): Promise<readonly EnvironmentStatus[]>;
   addEnvironment(input: { id: string; name: string; url: string; token?: string }): Promise<Environment>;
   removeEnvironment(id: string): Promise<void>;
   pushDataset(datasetId: string, environmentId: string): Promise<{ ok: true; environment: string }>;
-  remoteQuery(environmentId: string, datasetId: string, sql: string): Promise<unknown>;
+  remoteQuery(environmentId: string, datasetId: string, sql: string): Promise<RemoteQueryResult>;
 
   // ---- Phase 9 -----------------------------------------------------------
   getLifecycle(): Promise<Lifecycle>;
@@ -211,6 +214,7 @@ export const IPC = {
   setTracePayloadCapture: 'datera:setTracePayloadCapture',
   pruneTraceLog: 'datera:pruneTraceLog',
   listEnvironments: 'datera:listEnvironments',
+  listReachableDatasets: 'datera:listReachableDatasets',
   environmentStatuses: 'datera:environmentStatuses',
   addEnvironment: 'datera:addEnvironment',
   removeEnvironment: 'datera:removeEnvironment',

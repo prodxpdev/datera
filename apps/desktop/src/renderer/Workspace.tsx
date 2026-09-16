@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   Dataset,
   ModelCatalogue,
+  ReachableDataset,
   EngineInfo,
   PreviewResult,
   SourceSchema,
@@ -72,6 +73,8 @@ interface Loaded {
   readonly datasets: readonly Dataset[];
   readonly sources: readonly SourceWithStatus[];
   readonly models: ModelCatalogue;
+  /** Local datasets plus any a configured server offers (§12.10). */
+  readonly reachable: readonly ReachableDataset[];
   /** Datasets that may currently be written to. Usually empty, and that is the point. */
   readonly writable: readonly string[];
 }
@@ -102,14 +105,16 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [engine, datasets, sources, models] = await Promise.all([
+      const [engine, datasets, sources, models, reachable] = await Promise.all([
         api.engineInfo(), api.listDatasets(), api.listSources(), api.listModels(),
+        // Never fatal: a server being down must not stop the workspace opening.
+        api.listReachableDatasets().catch(() => []),
       ]);
       const grants = await Promise.all(
         datasets.map(async (d) => ((await api.canWrite(d.id)) ? d.id : null)),
       );
       setLoaded({
-        engine, datasets, sources, models,
+        engine, datasets, sources, models, reachable,
         writable: grants.filter((id): id is string => id !== null),
       });
       setDatasetId((current) =>
@@ -270,11 +275,19 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
     return <div className="empty">Opening the workspace…</div>;
   }
 
-  const dataset = loaded.datasets.find((d) => d.id === datasetId) ?? loaded.datasets[0];
+  const remoteDatasets = loaded.reachable.filter((r) => r.remote);
+  // A remote selection is "<environment>:<dataset>", which is also how the chrome tells
+  // the two apart without carrying a second piece of state.
+  const remoteSelection = remoteDatasets.find(
+    (r) => `${r.environmentId}:${r.dataset.id}` === datasetId,
+  );
+
+  const dataset =
+    remoteSelection?.dataset ?? loaded.datasets.find((d) => d.id === datasetId) ?? loaded.datasets[0];
   // Only connected datasets can hold a source. A derived dataset owns materialised tables
   // copied from somewhere else, so moving a file into one would be meaningless.
   const groupable = loaded.datasets.filter((d) => d.kind !== 'derived');
-  const activeId = dataset?.id ?? 'ungrouped';
+  const activeId = remoteSelection?.dataset.id ?? dataset?.id ?? 'ungrouped';
   const current = NAV.find((n) => n.id === nav) ?? NAV[0]!;
 
   return (
@@ -360,6 +373,18 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                   {d.name} · {loaded.sources.filter((x) => x.datasetId === d.id).length} source(s)
                 </option>
               ))}
+
+              {/* A server's datasets sit in the same picker, because §12.10 says the same
+                  UI drives them — a separate 'remote' mode would be a second product. */}
+              {remoteDatasets.length > 0 && (
+                <optgroup label="On a Datera Server">
+                  {remoteDatasets.map((r) => (
+                    <option key={`${r.environmentId}:${r.dataset.id}`} value={`${r.environmentId}:${r.dataset.id}`}>
+                      {r.dataset.name} · {r.environmentName}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
         </div>
@@ -388,12 +413,15 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
 
           {nav === 'query' && (
             <Query
-              key={activeId}
+              key={datasetId ?? activeId}
               api={api}
               datasetId={activeId}
               datasetName={dataset?.name ?? 'Ungrouped'}
               datasetKind={dataset?.kind ?? 'connected'}
               onChanged={() => void refresh()}
+              {...(remoteSelection === undefined
+                ? {}
+                : { environment: { id: remoteSelection.environmentId, name: remoteSelection.environmentName } })}
             />
           )}
 

@@ -48,6 +48,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/node-runtime
     devDependencies:
+      '@datera/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
       '@datera/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
