@@ -209,6 +209,40 @@ describe('§12.11 portability — delete Datera and your artifact still runs', (
     }
   });
 
+  it('carries confirmed relationships across the round trip', async () => {
+    // §12.11 names relationships explicitly, and the exporter has always written them —
+    // but nothing asserted they came back. A round trip that silently dropped the joins
+    // would still pass every other assertion here while leaving the imported dataset
+    // unable to answer the questions the original could.
+    await ws.datera.addSource({ type: 'file', path: fixtures.notesNdjson, name: 'support_notes' });
+
+    const [proposal] = await ws.datera.detectRelationships(DEFAULT_DATASET_ID);
+    const confirmed = await ws.datera.confirmRelationship(DEFAULT_DATASET_ID, proposal!);
+
+    await ws.datera.exportDataset(DEFAULT_DATASET_ID, exportDir, { format: 'parquet' });
+
+    const clean = await openTestWorkspace({ ports: testPorts() });
+    try {
+      const imported = await clean.datera.importDataset(exportDir);
+      const links = await clean.datera.listRelationships(imported.datasetId);
+
+      expect(links).toHaveLength(1);
+      expect(links[0]?.fromTable).toBe(confirmed.fromTable);
+      expect(links[0]?.fromColumn).toBe(confirmed.fromColumn);
+      expect(links[0]?.toTable).toBe(confirmed.toTable);
+      expect(links[0]?.toColumn).toBe(confirmed.toColumn);
+
+      // And it is usable, not merely recorded: the join the relationship describes runs.
+      const joined = await clean.datera.query(
+        imported.datasetId,
+        `SELECT count(*) FROM orders o JOIN support_notes n ON o.${confirmed.toColumn} = n.${confirmed.fromColumn}`,
+      );
+      expect(Number(joined.rows[0]?.[0])).toBeGreaterThan(0);
+    } finally {
+      await clean.dispose();
+    }
+  });
+
   it('exports CSV when asked, for tools that cannot read Parquet', async () => {
     const result = await ws.datera.exportDataset(DEFAULT_DATASET_ID, exportDir, { format: 'csv' });
     expect(result.files.some((f) => f.endsWith('.csv'))).toBe(true);

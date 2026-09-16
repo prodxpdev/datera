@@ -146,7 +146,7 @@ describe('§7 normalization', () => {
       const proposals = await ws.datera.proposeEnums(sourceId);
       const category = proposals.find((p) => p.column === 'product_category');
 
-      expect(category?.values.sort()).toEqual(['Apparel', 'Gear']);
+      expect([...(category?.values ?? [])].sort()).toEqual(['Apparel', 'Gear']);
       expect(category?.distinctValues).toBe(2);
     });
 

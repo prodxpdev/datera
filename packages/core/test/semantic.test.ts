@@ -17,6 +17,66 @@ import {
  * (§1.5): asking a model which path to take would make the one decision that determines
  * what the user is charged for, and how long they wait, itself a model call.
  */
+/**
+ * §12.5's second half, which was only ever claimed in a describe name.
+ *
+ * "Structured questions route to SQL (no embeddings)" is two assertions. The routing
+ * decision was tested; the *cost* was not — and the cost is the reason the criterion
+ * exists. A structured question that quietly embedded the dataset first would still route
+ * correctly, still return the right answer, and still be wrong in the way that matters:
+ * slower, and billed.
+ *
+ * Asserted against the model server's captured requests, so it measures what actually
+ * went over the wire rather than what the code intended.
+ */
+describe('§12.5 a structured question computes no embeddings', () => {
+  let ws: TestWorkspace;
+  let server: StubModelServer;
+  let fixtures: FixturePaths;
+
+  beforeEach(async () => {
+    fixtures = fixturePaths(process.env['DATERA_FIXTURES'] as string);
+    server = await startStubModelServer();
+    ws = await openTestWorkspace({ ports: testPorts({ http: true }) });
+    await ws.datera.addSource({ type: 'file', path: fixtures.ordersCsv, name: 'orders' });
+
+    await ws.datera.setChatModel({
+      tier: 'detected', provider: 'openai-compatible', id: 'stub-chat',
+      role: 'chat', locality: 'local', endpoint: server.url, label: 'stub',
+    });
+    // An embedding model *is* configured — otherwise this would pass for the wrong
+    // reason, proving only that an unconfigured embedder cannot be called.
+    await ws.datera.setEmbeddingModel({
+      tier: 'detected', provider: 'openai-compatible', id: 'stub-embed',
+      role: 'embedding', locality: 'local', endpoint: server.url, label: 'stub',
+    });
+  });
+
+  afterEach(async () => {
+    await ws.dispose();
+    await server.close();
+  });
+
+  it('never calls the embedding endpoint', async () => {
+    server.setReply('SELECT product, sum(revenue_cents) AS revenue FROM orders GROUP BY product');
+
+    const answer = await ws.datera.ask(DEFAULT_DATASET_ID, 'total revenue by product');
+    expect(answer.answerable).toBe(true);
+
+    const embedded = server.requests.filter((r) => r.path.startsWith('/v1/embeddings'));
+    expect(embedded, `${embedded.length} embedding call(s) on a structured question`).toEqual([]);
+  });
+
+  it('calls it on the semantic path, so the check above means something', async () => {
+    // The control. Without it, "zero embedding calls" could be true because embedding is
+    // broken rather than because the router avoided it.
+    await ws.datera.addSource({ type: 'file', path: fixtures.notesNdjson, name: 'support_notes' });
+    await ws.datera.buildEmbeddings(DEFAULT_DATASET_ID);
+
+    expect(server.requests.some((r) => r.path.startsWith('/v1/embeddings'))).toBe(true);
+  });
+});
+
 describe('§12.5 routing', () => {
   const textColumns = ['note'];
 

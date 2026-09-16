@@ -282,7 +282,7 @@ describe('referenced tables, for live highlighting', () => {
   const names = ['orders', 'support_notes', 'customers'];
 
   it('finds tables in a complete query', () => {
-    expect(referencedTables('SELECT * FROM orders JOIN support_notes ON 1=1', names).sort())
+    expect([...referencedTables('SELECT * FROM orders JOIN support_notes ON 1=1', names)].sort())
       .toEqual(['orders', 'support_notes']);
   });
 

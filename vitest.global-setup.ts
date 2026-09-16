@@ -35,6 +35,22 @@ export async function setup(): Promise<void> {
     );
   }
 
+  // Then typecheck the tests themselves. The package projects deliberately exclude them
+  // (each sets rootDir: src), which meant a test could compile against a type it no
+  // longer matched — a stub missing methods a port had gained, and the code under test
+  // swallowing the failure. Both happened; both passed green.
+  try {
+    await run('node', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.tests.json'], {
+      cwd: process.cwd(),
+    });
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string; message?: string };
+    throw new Error(
+      `The test suites do not typecheck.\n${err.stdout ?? ''}${err.stderr ?? ''}${err.message ?? ''}`,
+      { cause: e },
+    );
+  }
+
   const paths = await generateFixtures();
   process.env.DATERA_FIXTURES = paths.root;
 
