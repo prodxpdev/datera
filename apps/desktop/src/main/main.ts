@@ -238,6 +238,8 @@ function registerHandlers(): void {
     });
     return result.canceled ? [] : result.filePaths;
   });
+
+  handle(IPC.listWorkbookSheets, async (path: string) => core().listWorkbookSheets(path));
 }
 
 /**

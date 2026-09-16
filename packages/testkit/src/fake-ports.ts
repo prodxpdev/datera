@@ -124,6 +124,12 @@ export class RecordingFileSystem implements FileSystemPort {
     return this.inner.mkdirp(path);
   }
 
+  /** Delegated, and recorded: sheet enumeration reads a real workbook. */
+  async readZipEntry(path: string, entry: string): Promise<string | null> {
+    this.reads.push(path);
+    return this.inner.readZipEntry?.(path, entry) ?? null;
+  }
+
   async readTextFile(path: string): Promise<string> {
     this.reads.push(path);
     return this.inner.readTextFile(path);

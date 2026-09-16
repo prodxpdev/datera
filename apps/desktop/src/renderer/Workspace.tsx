@@ -17,6 +17,7 @@ import { WriteAccess } from './WriteAccess.js';
 import { Settings } from './Settings.js';
 import { Mark } from './Brand.js';
 import { FirstRun } from './FirstRun.js';
+import { SheetPicker } from './SheetPicker.js';
 
 /**
  * The application shell.
@@ -86,6 +87,9 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [nav, setNav] = useState<NavId>('data');
   const [dataTab, setDataTab] = useState<DataTab>('sources');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingWorkbooks, setPendingWorkbooks] = useState<
+    readonly { path: string; sheets: readonly string[] }[]
+  >([]);
   // The governing boundary, held once for the whole app instead of re-asked per view.
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [newDataset, setNewDataset] = useState(false);
@@ -187,10 +191,24 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
     setError(null);
     try {
       const paths = await api.pickFiles();
+      const workbooks: { path: string; sheets: readonly string[] }[] = [];
+
       for (const path of paths) {
+        // A workbook with more than one sheet is a choice, not a file. Connecting the
+        // first sheet silently is how someone ends up querying a summary tab and
+        // wondering where their data went.
+        if (/\.xlsx$/i.test(path)) {
+          const sheets = await api.listWorkbookSheets(path);
+          if (sheets.length > 1) {
+            workbooks.push({ path, sheets });
+            continue;
+          }
+        }
         const isSqlite = /\.(sqlite|sqlite3|db)$/i.test(path);
         await api.addSource(isSqlite ? { type: 'sqlite', path } : { type: 'file', path });
       }
+
+      if (workbooks.length > 0) setPendingWorkbooks(workbooks);
       if (paths.length > 0) await refresh();
     } catch (e) {
       report(e);
@@ -198,6 +216,25 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
       setBusy(false);
     }
   }, [api, refresh, report]);
+
+  /** Connect the chosen sheets, each as its own source. */
+  const connectSheets = useCallback(
+    async (path: string, sheets: readonly string[]) => {
+      setBusy(true);
+      try {
+        for (const sheet of sheets) {
+          await api.addSource({ type: 'file', path, sheet, name: sheet });
+        }
+        setPendingWorkbooks((prev) => prev.filter((w) => w.path !== path));
+        await refresh();
+      } catch (e) {
+        report(e);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, refresh, report],
+  );
 
   const createDataset = async (): Promise<void> => {
     if (newName.trim().length === 0) return;
@@ -331,6 +368,17 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           {/* Shown only while nothing can answer a question. A configured workspace never
               sees it, and it is dismissible for anyone bringing their own key. */}
           <FirstRun api={api} onDone={() => void refresh()} />
+
+          {pendingWorkbooks.map((workbook) => (
+            <SheetPicker
+              key={workbook.path}
+              path={workbook.path}
+              sheets={workbook.sheets}
+              busy={busy}
+              onConnect={(sheets) => void connectSheets(workbook.path, sheets)}
+              onSkip={() => setPendingWorkbooks((prev) => prev.filter((w) => w.path !== workbook.path))}
+            />
+          ))}
 
           {error !== null && (
             <div className="err" role="alert">

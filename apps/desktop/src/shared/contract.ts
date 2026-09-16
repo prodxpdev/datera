@@ -63,6 +63,7 @@ export interface DateraApi {
   query(datasetId: string, sql: string): Promise<QueryResult>;
   /** Opens the OS file picker. Host-provided: the core has no idea what a dialog is. */
   pickFiles(): Promise<readonly string[]>;
+  listWorkbookSheets(path: string): Promise<readonly string[]>;
 
   // ---- Phase 2 -----------------------------------------------------------
   ask(datasetId: string, question: string, options?: { topK?: number }): Promise<AskResult>;
@@ -170,6 +171,7 @@ export const IPC = {
   preview: 'datera:preview',
   query: 'datera:query',
   pickFiles: 'datera:pickFiles',
+  listWorkbookSheets: 'datera:listWorkbookSheets',
   ask: 'datera:ask',
   listModels: 'datera:listModels',
   downloadBundledModel: 'datera:downloadBundledModel',

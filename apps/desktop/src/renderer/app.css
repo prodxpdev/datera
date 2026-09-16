@@ -656,3 +656,12 @@
 .paramrow select { border: 1px solid var(--line2); border-radius: 7px; padding: 4px 7px; font-size: 12px; font-family: var(--mono); }
 .operations textarea { width: 100%; min-height: 120px; border: 1px solid var(--line2); border-radius: 9px; padding: 11px 13px; font-family: var(--mono); font-size: 12.5px; resize: vertical; }
 .operations .pickrow input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line2); border-radius: 7px; padding: 5px 10px; font-family: inherit; font-size: 13px; }
+
+/* Sheet picker for a multi-sheet workbook. */
+.sheetpicker { border: 1px solid var(--indigo-line); background: var(--indigo-bg); border-radius: 13px; padding: 16px 19px; margin-bottom: 16px; min-width: 0; }
+.sheetpicker p { font-size: 13px; color: var(--ink2); line-height: 1.6; margin: 5px 0 11px; max-width: 68ch; }
+.sheetlist { display: grid; gap: 3px; margin-bottom: 13px; }
+.sheetrow { display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 4px 6px; border-radius: 7px; cursor: pointer; }
+.sheetrow:hover { background: var(--card); }
+.sheetname { font-family: var(--mono); font-size: 12.5px; }
+.sheetnote { font-size: 10.5px; color: var(--ink3); }

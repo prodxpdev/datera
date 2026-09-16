@@ -18,4 +18,19 @@ export interface FileSystemPort {
   mkdirp(path: string): Promise<void>;
   readTextFile(path: string): Promise<string>;
   writeTextFile(path: string, contents: string): Promise<void>;
+
+  /**
+   * Read one named entry out of a zip container, as text. Null when absent.
+   *
+   * Optional, because it is the only thing here a host might reasonably not have:
+   * decompressing a zip member needs an inflate implementation, and the core has none by
+   * construction (§1.7). A host that omits it simply cannot enumerate the sheets in an
+   * .xlsx — that degrades to "connect the first sheet", which is where the product
+   * already was, rather than to an error.
+   *
+   * Generic rather than an `.xlsx`-shaped method: an Office file is a zip, and so are
+   * several other formats worth reading later. A port method named after one caller ages
+   * badly.
+   */
+  readZipEntry?(path: string, entry: string): Promise<string | null>;
 }

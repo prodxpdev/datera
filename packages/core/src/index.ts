@@ -127,6 +127,7 @@ export { assertWithinDataset, extractTableReferences } from './query/scope.js';
 export { summariseTouched } from './query/touched.js';
 export { completionsAt, referencedTables, starterSql } from './query/schema-graph.js';
 export { suggestQuestions } from './query/suggest.js';
+export { sheetNamesFrom } from './sources/workbook.js';
 export {
   assertOperationName, assertParametersMatch, bindArguments, inlineArguments,
   operationTool, placeholdersIn,

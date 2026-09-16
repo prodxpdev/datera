@@ -105,6 +105,7 @@ import {
   assertOperationName, assertParametersMatch, bindArguments, inlineArguments, operationTool,
   type AuthoredOperation, type CreateOperationInput,
 } from './serve/operations.js';
+import { sheetNamesFrom } from './sources/workbook.js';
 import { draftDictionary } from './dictionary/draft.js';
 import type { GraphTable, SchemaGraph } from './query/schema-graph.js';
 import {
@@ -418,6 +419,25 @@ export class Datera {
   }
 
   /** Connect a source read-only. Returns every source created (a database yields many). */
+  /**
+   * The sheets in an .xlsx workbook, in workbook order (#31).
+   *
+   * Empty rather than throwing when the file is not a readable workbook, or when the host
+   * cannot open a zip: this is called speculatively the moment a file is chosen, and a
+   * picker that errors about sheets on a CSV is worse than one that simply does not ask.
+   */
+  async listWorkbookSheets(path: string): Promise<readonly string[]> {
+    const readZipEntry = this.ports.fs.readZipEntry?.bind(this.ports.fs);
+    if (readZipEntry === undefined) return [];
+
+    try {
+      const xml = await readZipEntry(path, 'xl/workbook.xml');
+      return xml === null ? [] : sheetNamesFrom(xml);
+    } catch {
+      return [];
+    }
+  }
+
   async addSource(request: AddSourceRequest): Promise<readonly Source[]> {
     switch (request.type) {
       case 'file':
