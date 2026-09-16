@@ -20,6 +20,17 @@ import { CATALOG_SCHEMA } from '../workspace/catalog.js';
 
 export type TraceOrigin = 'ask' | 'tool' | 'sql';
 
+/** One step of a recorded request, as it happened. */
+export interface TraceStageRecord {
+  readonly kind: string;
+  readonly label: string;
+  readonly durationMs: number;
+  readonly detail?: string | undefined;
+  readonly modelName?: string | undefined;
+  readonly schemaSummary?: string | undefined;
+  readonly sql?: string | undefined;
+}
+
 export interface TraceRecord {
   readonly id: string;
   readonly at: string;
@@ -38,6 +49,8 @@ export interface TraceRecord {
   readonly error: string | null;
   /** Null unless payload capture is explicitly on. */
   readonly payload: string | null;
+  /** Every hop, in order. Empty for records written before this was kept. */
+  readonly stages: readonly TraceStageRecord[];
 }
 
 export interface RetentionPolicy {
@@ -81,8 +94,31 @@ export async function migrateTraceLog(engine: Engine): Promise<void> {
       rows_returned BIGINT NOT NULL,
       ok BOOLEAN NOT NULL,
       error VARCHAR,
-      payload VARCHAR
+      payload VARCHAR,
+      -- The stage-by-stage sequence, as JSON.
+      --
+      -- Stages were read for the model name and the SQL and then discarded, so the
+      -- execution sequence existed only in the live answer drawer: the moment you looked
+      -- at a past request, the thing the product is built to show you was gone. §12.9
+      -- asks for "a complete trace covering every hop", which a summary row is not.
+      --
+      -- Model payloads are NOT in here: they stay behind the capture flag in the payload
+      -- column, because those carry prompt text and this column does not.
+      stages VARCHAR
     )`);
+
+  // An existing workspace has the table without the column. Asked for rather than
+  // guessed, and failing loudly if it cannot be added — a half-migrated catalog that
+  // still opens is how a user ends up unable to use their workspace at all.
+  const columns = await engine.executeInternal(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = ? AND table_name = 'trace_log'`,
+    [CATALOG_SCHEMA],
+  );
+  const present = new Set(columns.rows.map((row) => String(row[0]).toLowerCase()));
+  if (present.size > 0 && !present.has('stages')) {
+    await engine.executeInternal(`ALTER TABLE ${CATALOG_SCHEMA}.trace_log ADD COLUMN stages VARCHAR`);
+  }
 }
 
 export interface RecordOptions {
@@ -117,11 +153,29 @@ export async function recordTrace(
       )
     : null;
 
+  // Everything except the model payload, which is governed by the capture flag above.
+  // Detail and schema summaries are schema, not rows — the same material §1.4 already
+  // permits a model to see.
+  const stages = redactSecrets(
+    JSON.stringify(
+      trace.stages.map((stage) => ({
+        kind: stage.kind,
+        label: stage.label,
+        durationMs: stage.durationMs,
+        ...(stage.detail === undefined ? {} : { detail: stage.detail }),
+        ...(stage.modelName === undefined ? {} : { modelName: stage.modelName }),
+        ...(stage.schemaSummary === undefined ? {} : { schemaSummary: stage.schemaSummary }),
+        ...(stage.sql === undefined ? {} : { sql: stage.sql }),
+      })),
+    ),
+    ...(options.secrets ?? []),
+  );
+
   await engine.executeInternal(
     `INSERT INTO ${CATALOG_SCHEMA}.trace_log
       (id, occurred_at, origin, dataset_id, question, route, model_name, sql, total_ms,
-       input_tokens, output_tokens, cost_usd, rows_returned, ok, error, payload)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       input_tokens, output_tokens, cost_usd, rows_returned, ok, error, payload, stages)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       trace.id,
       trace.startedAt,
@@ -141,6 +195,7 @@ export async function recordTrace(
         ? null
         : redactSecrets(options.error, ...(options.secrets ?? [])),
       payload,
+      stages,
     ],
   );
 }
@@ -175,7 +230,7 @@ export async function queryTraceLog(
 
   const result = await engine.executeInternal(
     `SELECT id, occurred_at, origin, dataset_id, question, route, model_name, sql, total_ms,
-            input_tokens, output_tokens, cost_usd, rows_returned, ok, error, payload
+            input_tokens, output_tokens, cost_usd, rows_returned, ok, error, payload, stages
      FROM ${CATALOG_SCHEMA}.trace_log ${where} ORDER BY occurred_at DESC LIMIT ${limit}`,
     params,
   );
@@ -197,7 +252,20 @@ export async function queryTraceLog(
     ok: row[13] === true,
     error: row[14] === null ? null : String(row[14]),
     payload: row[15] === null ? null : String(row[15]),
+    // Records written before stages were kept simply have none. An empty sequence is the
+    // honest representation of "we did not save this", and the viewer says so.
+    stages: parseStages(row[16]),
   }));
+}
+
+function parseStages(value: unknown): readonly TraceStageRecord[] {
+  if (value === null || value === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    return Array.isArray(parsed) ? (parsed as TraceStageRecord[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 /**

@@ -41,21 +41,60 @@ describe('bundled model download', () => {
       })) as unknown as typeof fetch;
   }
 
-  it('rejects a file whose checksum does not match, and keeps nothing', async () => {
-    const llm = new NodeLocalLlm({ directory, fetchImpl: serve(Buffer.from('not the model')) });
+  it('rejects a file whose contents are wrong, and keeps nothing', async () => {
+    // Full length, wrong bytes — the genuine "not the published file" case.
+    const body = Buffer.from('not the model');
+    const llm = new NodeLocalLlm({
+      directory,
+      fetchImpl: serve(body),
+      models: [{ ...spec, sizeBytes: body.length }],
+    });
 
-    await expect(llm.ensure(spec.id)).rejects.toThrow(/verification/i);
+    await expect(llm.ensure(spec.id)).rejects.toThrow(/checksum/i);
 
     // No partial, no truncated model, nothing a later run could pick up and load.
     expect(await readdir(directory)).toEqual([]);
   });
 
   it('says what it expected and what it got, without dumping a 64-character hash twice', async () => {
-    const llm = new NodeLocalLlm({ directory, fetchImpl: serve(Buffer.from('wrong')) });
+    // A complete file of the right length whose contents are wrong — the case where
+    // "does not match its published checksum" is the accurate thing to say.
+    const body = Buffer.alloc(spec.sizeBytes > 1024 ? 1024 : spec.sizeBytes, 7);
+    const wrongContents = (async () =>
+      new Response(Readable.toWeb(Readable.from([body])) as ReadableStream, {
+        status: 200,
+        headers: { 'content-length': String(body.length) },
+      })) as unknown as typeof fetch;
 
-    await expect(llm.ensure(spec.id)).rejects.toThrow(
-      new RegExp(`${spec.sha256.slice(0, 12)}`),
-    );
+    const llm = new NodeLocalLlm({
+      directory,
+      fetchImpl: wrongContents,
+      models: [{ ...spec, sizeBytes: body.length }],
+    });
+
+    await expect(llm.ensure(spec.id)).rejects.toThrow(new RegExp(`${spec.sha256.slice(0, 12)}`));
+    // And it does not accuse the publisher: a corrupted transfer looks identical.
+    await expect(llm.ensure(spec.id)).rejects.toThrow(/Trying again is reasonable/i);
+  });
+
+  it('reports a truncated download as a dropped connection, not a bad file', async () => {
+    // Reported from a real download: the 1.5B failed 'verification', which reads as 'this
+    // file is not what it claims'. The checksum was correct — the transfer had ended
+    // early. Blaming the publisher for the user's network is both wrong and unactionable,
+    // and the two need different advice.
+    const short = (async () =>
+      new Response(Readable.toWeb(Readable.from([Buffer.alloc(64)])) as ReadableStream, {
+        status: 200,
+        // Claims the full length, delivers 64 bytes — exactly what a dropped connection
+        // looks like.
+        headers: { 'content-length': String(spec.sizeBytes) },
+      })) as unknown as typeof fetch;
+
+    const llm = new NodeLocalLlm({ directory, fetchImpl: short });
+
+    await expect(llm.ensure(spec.id)).rejects.toThrow(/ended early|dropped connection/i);
+    await expect(llm.ensure(spec.id)).rejects.not.toThrow(/does not match its published checksum/i);
+    expect(await readdir(directory)).toEqual([]);
   });
 
   it('reports a failed request as a download failure, not a verification failure', async () => {
@@ -70,7 +109,10 @@ describe('bundled model download', () => {
     const llm = new NodeLocalLlm({ directory });
     const statuses = await llm.status();
 
-    expect(statuses).toHaveLength(3);
+    // Three chat models and one embedder — the runtime manages both kinds, since both
+    // are weights on disk that have to be fetched and verified the same way.
+    expect(statuses).toHaveLength(4);
+    expect(statuses.filter((s) => s.modelId.includes('embed'))).toHaveLength(1);
     for (const status of statuses) {
       expect(status.ready).toBe(false);
       expect(status.bytesOnDisk).toBe(0);

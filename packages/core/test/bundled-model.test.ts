@@ -47,6 +47,12 @@ class StubLlm implements LocalLlmPort {
     this.warmed.push(modelId);
   }
 
+  async embed(_modelId: string, texts: readonly string[]): Promise<readonly (readonly number[])[]> {
+    // Deterministic stand-in: the vectors only have to be stable and the right shape for
+    // the storage and similarity path, which is what is under test here.
+    return texts.map((text) => [text.length / 100, 0.5, 0.25]);
+  }
+
   async ensure(): Promise<void> {}
   async remove(): Promise<void> {}
   async dispose(): Promise<void> {}
@@ -179,6 +185,34 @@ describe('§12.8 the bundled tier answers offline, with no key', () => {
     await ws.datera.warmChatModel();
 
     expect(llm.warmed).toEqual([]);
+  });
+
+  it('offers a local embedder, so §1.6 holds without Ollama installed', async () => {
+    // The gap this closes: embedding candidates came only from detected runtimes, so
+    // someone with an Anthropic key and nothing installed had no embedding option at all
+    // — and "embeddings stay on this machine" was true only for people who had already
+    // done the setup.
+    const candidates = (await ws.datera.listModels()).embeddingCandidates;
+
+    expect(candidates.some((m) => m.tier === 'bundled')).toBe(true);
+    expect(candidates.find((m) => m.tier === 'bundled')?.locality).toBe('local');
+    expect(candidates.find((m) => m.tier === 'bundled')?.role).toBe('embedding');
+  });
+
+  it('embeds through the bundled model when one is selected', async () => {
+    const embedder = (await ws.datera.listModels()).embeddingCandidates.find(
+      (m) => m.tier === 'bundled',
+    )!;
+    await ws.datera.setEmbeddingModel(embedder);
+    // A prose column: the orders fixture is all short categories, which the builder
+    // correctly declines to embed ("below this length, a text column is a category").
+    await ws.datera.addSource({ type: 'file', path: fixtures.notesNdjson, name: 'support_notes' });
+
+    const built = await ws.datera.buildEmbeddings(DEFAULT_DATASET_ID);
+    // The orders fixture has a text column, so this embeds something rather than
+    // vacuously succeeding on nothing.
+    expect(built.chunksEmbedded).toBeGreaterThan(0);
+    expect(built.modelId).toContain('nomic');
   });
 
   it('offers no bundled tier at all when the host cannot run one', async () => {

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import {
-  BUNDLED_MODELS,
+  ALL_BUNDLED_MODELS,
   type BundledModelSpec,
   type DownloadProgress,
   type LocalGenerateRequest,
@@ -39,6 +39,17 @@ export interface NodeLocalLlmOptions {
    * success path nobody exercises is where the bug lives.
    */
   readonly models?: readonly BundledModelSpec[] | undefined;
+  /**
+   * A read-only location checked before `directory`, for weights shipped inside the
+   * installer.
+   *
+   * The default build fetches on demand, which is right: a 2.1 GB file cannot be a GitHub
+   * release asset, and bundling would charge every user for a tier some never touch. But a
+   * classroom with no per-student internet cannot download anything, so a second artifact
+   * carries the weights — and an app bundle is not writable, so the seed is read in place
+   * rather than copied. Copying would also double two gigabytes of disk for no gain.
+   */
+  readonly seedDirectory?: string | undefined;
 }
 
 type LlamaModule = typeof import('node-llama-cpp');
@@ -46,12 +57,13 @@ type LlamaModule = typeof import('node-llama-cpp');
 export class NodeLocalLlm implements LocalLlmPort {
   private llama: Awaited<ReturnType<LlamaModule['getLlama']>> | null = null;
   private loaded: { modelId: string; model: unknown; context: unknown } | null = null;
+  private embedder: { modelId: string; model: unknown; context: unknown } | null = null;
   private module: LlamaModule | null = null;
 
   private readonly models: readonly BundledModelSpec[];
 
   constructor(private readonly options: NodeLocalLlmOptions) {
-    this.models = options.models ?? BUNDLED_MODELS;
+    this.models = options.models ?? ALL_BUNDLED_MODELS;
   }
 
   private spec(modelId: string): BundledModelSpec {
@@ -66,8 +78,10 @@ export class NodeLocalLlm implements LocalLlmPort {
 
     return Promise.all(
       this.models.map(async (spec) => {
-        const path = this.pathFor(spec.file);
-        const size = (await stat(path).catch(() => null))?.size ?? 0;
+        const resolved = await this.resolvePath(spec);
+        const size = resolved === null
+          ? (await stat(this.pathFor(spec.file)).catch(() => null))?.size ?? 0
+          : spec.sizeBytes;
 
         // Judged against total memory, not free: free memory fluctuates with whatever the
         // user happens to have open, and telling someone their machine cannot run a model
@@ -76,7 +90,7 @@ export class NodeLocalLlm implements LocalLlmPort {
 
         return {
           modelId: spec.id,
-          ready: size === spec.sizeBytes,
+          ready: resolved !== null,
           bytesOnDisk: size,
           unavailableReason: fits
             ? null
@@ -100,7 +114,8 @@ export class NodeLocalLlm implements LocalLlmPort {
     const spec = this.spec(modelId);
     const target = this.pathFor(spec.file);
 
-    if (((await stat(target).catch(() => null))?.size ?? 0) === spec.sizeBytes) return;
+    // Already here — downloaded, or shipped in the installer. Either way, nothing to do.
+    if ((await this.resolvePath(spec)) !== null) return;
 
     await mkdir(this.options.directory, { recursive: true });
     const partial = `${target}.partial`;
@@ -129,12 +144,27 @@ export class NodeLocalLlm implements LocalLlmPort {
 
     await pipeline(body, createWriteStream(partial));
 
+    // Length before hash, because the two failures need different advice and a hash
+    // mismatch cannot tell them apart. A dropped connection produces a short file whose
+    // hash is simply wrong, and reporting that as "this is not the file we expected"
+    // blames the publisher for the user's network — which is both wrong and unactionable.
+    if (received !== total) {
+      await rm(partial, { force: true });
+      throw new Error(
+        `Downloading ${spec.label} ended early — ${gib(received)} GB of ${gib(total)} GB. ` +
+          'That is usually a dropped connection rather than a problem with the file. Try again.',
+      );
+    }
+
     const digest = await sha256File(partial);
     if (digest !== spec.sha256) {
       await rm(partial, { force: true });
       throw new Error(
-        `${spec.label} failed verification. Expected ${spec.sha256.slice(0, 12)}…, got ${digest.slice(0, 12)}…. ` +
-          'The file was discarded — a model is executable input, and an unverified one is not worth running.',
+        `${spec.label} downloaded completely but does not match its published checksum ` +
+          `(expected ${spec.sha256.slice(0, 12)}…, got ${digest.slice(0, 12)}…). The file was ` +
+          'discarded: a model is executable input, and one that is not what the publisher ' +
+          'signed is not worth running. Trying again is reasonable — a corrupted transfer ' +
+          'looks like this too.',
       );
     }
 
@@ -205,7 +235,47 @@ export class NodeLocalLlm implements LocalLlmPort {
     }
   }
 
+  /**
+   * Embed locally.
+   *
+   * An embedding context, not a chat one: the model has no chat template, and asking a
+   * chat session for a vector would be a category error rather than a slow path. Held
+   * separately from the chat model too — the two are different files and a workspace uses
+   * both at once.
+   */
+  async embed(modelId: string, texts: readonly string[]): Promise<readonly (readonly number[])[]> {
+    const spec = this.spec(modelId);
+    const llama = await this.getLlama();
+
+    if (this.embedder?.modelId !== modelId) {
+      await this.disposeEmbedder();
+      const modelPath = (await this.resolvePath(spec)) ?? this.pathFor(spec.file);
+      const model = await llama.loadModel({ modelPath });
+      const context = await model.createEmbeddingContext({ contextSize: spec.contextTokens });
+      this.embedder = { modelId, model, context };
+    }
+
+    const context = this.embedder.context as {
+      getEmbeddingFor(text: string): Promise<{ vector: readonly number[] }>;
+    };
+
+    const vectors: (readonly number[])[] = [];
+    for (const text of texts) {
+      vectors.push((await context.getEmbeddingFor(text)).vector);
+    }
+    return vectors;
+  }
+
+  private async disposeEmbedder(): Promise<void> {
+    const embedder = this.embedder;
+    this.embedder = null;
+    if (embedder === null) return;
+    await (embedder.context as { dispose(): Promise<void> }).dispose().catch(() => undefined);
+    await (embedder.model as { dispose(): Promise<void> }).dispose().catch(() => undefined);
+  }
+
   async dispose(): Promise<void> {
+    await this.disposeEmbedder();
     const loaded = this.loaded;
     this.loaded = null;
     if (loaded === null) return;
@@ -215,6 +285,24 @@ export class NodeLocalLlm implements LocalLlmPort {
 
   private pathFor(file: string): string {
     return join(this.options.directory, file);
+  }
+
+  /**
+   * Where a model's weights actually are: the downloaded copy if there is one, otherwise
+   * the seed.
+   *
+   * Downloaded wins, so that choosing a larger model later overrides whatever shipped in
+   * the installer — the user's decision should beat the packager's.
+   */
+  private async resolvePath(spec: BundledModelSpec): Promise<string | null> {
+    const downloaded = this.pathFor(spec.file);
+    if (((await stat(downloaded).catch(() => null))?.size ?? 0) === spec.sizeBytes) return downloaded;
+
+    const seedDirectory = this.options.seedDirectory;
+    if (seedDirectory === undefined) return null;
+
+    const seeded = join(seedDirectory, spec.file);
+    return ((await stat(seeded).catch(() => null))?.size ?? 0) === spec.sizeBytes ? seeded : null;
   }
 
   private async getLlama(): Promise<Awaited<ReturnType<LlamaModule['getLlama']>>> {
@@ -234,7 +322,8 @@ export class NodeLocalLlm implements LocalLlmPort {
     const spec = this.spec(modelId);
     const llama = await this.getLlama();
 
-    const model = await llama.loadModel({ modelPath: this.pathFor(spec.file) });
+    const modelPath = (await this.resolvePath(spec)) ?? this.pathFor(spec.file);
+    const model = await llama.loadModel({ modelPath });
     const context = await model.createContext({ contextSize: spec.contextTokens });
 
     this.loaded = { modelId, model, context };

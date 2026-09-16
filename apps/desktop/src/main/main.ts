@@ -73,7 +73,13 @@ async function openCore(): Promise<Datera> {
       // Weights live in the app's data directory, not the workspace: they are machine
       // state, shared across workspaces, and nobody wants two gigabytes copied when they
       // move a project folder.
-      llm: new NodeLocalLlm({ directory: join(app.getPath('userData'), 'models') }),
+      llm: new NodeLocalLlm({
+        directory: join(app.getPath('userData'), 'models'),
+        // Weights shipped inside the installer, for the offline build. Read in place: an
+        // app bundle is not writable, and copying two gigabytes to use them would be
+        // both slow and pointless.
+        seedDirectory: app.isPackaged ? join(process.resourcesPath, 'models') : join(appRoot, 'models'),
+      }),
     },
     extensionDirectory: resolveExtensionDirectory(app.isPackaged ? undefined : appRoot),
     appVersion: app.getVersion(),

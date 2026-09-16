@@ -88,6 +88,15 @@ export interface LocalLlmPort {
 
   generate(request: LocalGenerateRequest): Promise<LocalGenerateResult>;
 
+  /**
+   * Embed text locally (§1.6).
+   *
+   * Separate from `generate` because it is a different kind of model and a different
+   * context: an embedding model has no chat template and produces a vector rather than
+   * tokens. Conflating them would mean one of the two working by accident.
+   */
+  embed(modelId: string, texts: readonly string[]): Promise<readonly (readonly number[])[]>;
+
   /** Release any loaded model. Called when the workspace closes. */
   dispose(): Promise<void>;
 }

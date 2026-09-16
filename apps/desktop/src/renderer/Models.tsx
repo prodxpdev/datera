@@ -24,6 +24,10 @@ function gb(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(1);
 }
 
+function mb(bytes: number): string {
+  return Math.round(bytes / 1024 ** 2).toString();
+}
+
 export function Models({
   api,
   datasetId,
@@ -155,7 +159,7 @@ export function Models({
             This build has no local model runtime, so the bundled tier is unavailable here.
           </div>
         ) : (
-          catalogue.bundled.map((offer) => {
+          catalogue.bundled.filter((o) => o.spec.role === 'chat').map((offer) => {
             const progress = downloading[offer.modelId];
             const selected = selectedId === offer.modelId;
 
@@ -329,24 +333,64 @@ export function Models({
 
         {catalogue.embeddingCandidates.length === 0 ? (
           <div className="emptyrail">
-            No local embedding model detected. With Ollama:{' '}
-            <span className="mono">ollama pull nomic-embed-text</span>
+            No embedding model available on this host.
           </div>
         ) : (
-          catalogue.embeddingCandidates.map((model) => (
-            <div
-              key={`embed-${model.id}`}
-              className={`opt ${catalogue.selectedEmbedding?.id === model.id ? 'on' : ''}`}
-              onClick={() => void api.setEmbeddingModel(model).then(refresh)}
-            >
-              <span className="radio" />
-              <div>
-                <div className="ot">{model.id}</div>
-                <div className="od">{model.provider} · embeddings</div>
+          catalogue.embeddingCandidates.map((model) => {
+            // A bundled embedder needs its weights before it can be chosen — 84 MB, so
+            // the download is a footnote rather than the decision it is for chat.
+            const offer = catalogue.bundled.find((b) => b.modelId === model.id);
+            const needsDownload = offer !== undefined && !offer.ready;
+            const progress = downloading[model.id];
+
+            return (
+              <div
+                key={`embed-${model.id}`}
+                className={`opt ${catalogue.selectedEmbedding?.id === model.id ? 'on' : ''} ${
+                  needsDownload ? 'off' : ''
+                }`}
+                data-embedder={model.id}
+                onClick={() => {
+                  if (!needsDownload) void api.setEmbeddingModel(model).then(refresh);
+                }}
+              >
+                <span className="radio" />
+                <div>
+                  <div className="ot">
+                    {offer?.spec.label ?? model.id}
+                    {model.tier === 'bundled' && <span className="rec">nothing to install</span>}
+                  </div>
+                  <div className="od">
+                    {offer?.spec.tradeoff ?? `${model.provider} · embeddings`}
+                  </div>
+                  {progress !== undefined && (
+                    <div className="dlbar">
+                      <span style={{ width: `${Math.round(progress * 100)}%` }} />
+                      <i>{Math.round(progress * 100)}%</i>
+                    </div>
+                  )}
+                </div>
+                <span className="tg free">local</span>
+                {needsDownload && (
+                  <button
+                    className="btn p"
+                    data-download={model.id}
+                    disabled={progress !== undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void (async () => {
+                        await download(offer!);
+                        await api.setEmbeddingModel(model);
+                        await refresh();
+                      })();
+                    }}
+                  >
+                    {progress === undefined ? `Download ${mb(offer!.spec.sizeBytes)} MB` : 'Downloading…'}
+                  </button>
+                )}
               </div>
-              <span className="tg free">local</span>
-            </div>
-          ))
+            );
+          })
         )}
 
         {catalogue.selectedEmbedding !== null && (

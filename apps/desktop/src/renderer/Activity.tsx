@@ -156,6 +156,41 @@ export function Activity({
                     <dt>rows</dt><dd>{selected.rowsReturned}</dd>
                   </dl>
                   {selected.sql !== null && <pre className="sqlblock">{selected.sql}</pre>}
+
+                  {/* The execution sequence, for a request that already happened.
+                      Previously this existed only in the live answer drawer, so looking
+                      at a past request lost the very thing the product is built to show.
+                      §12.9 asks for a complete trace covering every hop — a summary row
+                      is not that. */}
+                  {selected.stages.length > 0 ? (
+                    <>
+                      <div className="payloadlabel">Every step, in order:</div>
+                      {selected.stages.map((stage, i) => (
+                        <div className={`stage stage-${stage.kind}`} key={`${stage.kind}-${i}`}>
+                          <div className="sl">
+                            {i + 1}. {stage.label}
+                            <span className="k">{stage.kind}</span>
+                            <span className="ms">{Math.round(stage.durationMs)}ms</span>
+                          </div>
+                          {stage.modelName !== undefined && (
+                            <div className="modelname">{stage.modelName}</div>
+                          )}
+                          {stage.schemaSummary !== undefined && (
+                            <div className="ss">{stage.schemaSummary}</div>
+                          )}
+                          {stage.sql !== undefined && <pre className="sqlblock">{stage.sql}</pre>}
+                          {stage.detail !== undefined && stage.kind !== 'schema' && (
+                            <div className="ss">{stage.detail}</div>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="softflag">
+                      No step-by-step record for this request — it was answered before Datera
+                      started keeping them. New requests have one.
+                    </div>
+                  )}
                   {selected.error !== null && <div className="flag">{selected.error}</div>}
                   {selected.payload !== null && (
                     <>

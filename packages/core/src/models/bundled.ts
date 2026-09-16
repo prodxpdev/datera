@@ -1,6 +1,7 @@
 import { DateraError } from '../errors.js';
 import type { LocalLlmPort } from '../ports/llm.js';
 import type { ChatModel, ChatRequest, ChatResponse, ModelDescriptor } from './types.js';
+import type { EmbeddingModel } from './embeddings.js';
 
 /**
  * The bundled tier — spec §9 tier 1, acceptance §12.8.
@@ -44,6 +45,14 @@ import type { ChatModel, ChatRequest, ChatResponse, ModelDescriptor } from './ty
 export interface BundledModelSpec {
   readonly id: string;
   readonly label: string;
+  /**
+   * What this model is for.
+   *
+   * Explicit rather than inferred from the name or the context size: a picker that guesses
+   * which list a model belongs in will eventually guess wrong, and the failure is a chat
+   * model offered as an embedder.
+   */
+  readonly role: 'chat' | 'embedding';
   /** File name on disk, and the name in the download URL. */
   readonly file: string;
   readonly url: string;
@@ -74,6 +83,7 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
   {
     id: 'qwen2.5-coder-1.5b-instruct-q4_k_m',
     label: 'Qwen2.5-Coder 1.5B',
+    role: 'chat',
     file: 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf',
     sha256: 'cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046',
@@ -85,6 +95,7 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
   {
     id: 'qwen2.5-coder-3b-instruct-q4_k_m',
     label: 'Qwen2.5-Coder 3B',
+    role: 'chat',
     file: 'qwen2.5-coder-3b-instruct-q4_k_m.gguf',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf',
     sha256: '724fb256bec1ff062b2f65e4569e871ad2e95ab2a3989723d1769c54294730b7',
@@ -96,6 +107,7 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
   {
     id: 'qwen2.5-coder-7b-instruct-q4_k_m',
     label: 'Qwen2.5-Coder 7B',
+    role: 'chat',
     file: 'qwen2.5-coder-7b-instruct-q4_k_m.gguf',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf',
     sha256: '509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c',
@@ -107,6 +119,53 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
 ];
 
 export const DEFAULT_BUNDLED_MODEL_ID = 'qwen2.5-coder-3b-instruct-q4_k_m';
+
+/**
+ * The bundled embedder (§1.6).
+ *
+ * Invariant §1.6 says embeddings stay on this machine even when chat is remote — but the
+ * only embedders on offer came from a runtime the user had already installed. Someone
+ * with an Anthropic key and no Ollama had no embedding option at all, so the semantic
+ * path simply did not exist for them, and "local by default" was true only for people who
+ * had already done the work.
+ *
+ * nomic-embed-text-v1.5: Apache 2.0 (the same redistribution argument as the chat tier),
+ * 84 MB at Q4_K_M — small enough that offering it is barely a decision — and genuinely
+ * good at retrieval for its size.
+ */
+export const BUNDLED_EMBEDDING_MODELS: readonly BundledModelSpec[] = [
+  {
+    id: 'nomic-embed-text-v1.5-q4_k_m',
+    label: 'Nomic Embed Text v1.5',
+    role: 'embedding',
+    file: 'nomic-embed-text-v1.5.Q4_K_M.gguf',
+    url: 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_M.gguf',
+    sha256: 'd4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac',
+    sizeBytes: 84_106_624,
+    minFreeMemoryBytes: 512 * 1024 * 1024,
+    contextTokens: 2048,
+    tradeoff: 'Runs here, so no text ever leaves this machine to be embedded. 84 MB.',
+  },
+];
+
+export const DEFAULT_BUNDLED_EMBEDDING_ID = 'nomic-embed-text-v1.5-q4_k_m';
+
+/** Every bundled model, chat and embedding, for the host runtime to manage. */
+export const ALL_BUNDLED_MODELS: readonly BundledModelSpec[] = [
+  ...BUNDLED_MODELS,
+  ...BUNDLED_EMBEDDING_MODELS,
+];
+
+export function bundledEmbeddingDescriptor(spec: BundledModelSpec): ModelDescriptor {
+  return {
+    tier: 'bundled',
+    provider: 'bundled',
+    id: spec.id,
+    role: 'embedding',
+    locality: 'local',
+    label: `${spec.label} — embeds on this machine, no key`,
+  };
+}
 
 /**
  * Which model to propose on this machine.
@@ -132,7 +191,7 @@ export function recommendBundledModel(totalMemoryBytes: number): BundledModelSpe
 }
 
 export function bundledModel(modelId: string): BundledModelSpec {
-  const spec = BUNDLED_MODELS.find((m) => m.id === modelId);
+  const spec = ALL_BUNDLED_MODELS.find((m) => m.id === modelId);
   if (spec === undefined) {
     throw new DateraError('INVALID_ARGUMENT', `Unknown bundled model "${modelId}".`, { modelId });
   }
@@ -222,5 +281,26 @@ export class BundledChatModel implements ChatModel {
       },
       durationMs: Date.now() - started,
     };
+  }
+}
+
+/**
+ * The bundled embedder, as an EmbeddingModel.
+ *
+ * Same shape as every other embedder, so nothing above it changes: chunking, storage and
+ * `array_cosine_similarity` are unaware of where the vectors came from.
+ */
+export class BundledEmbeddingModel implements EmbeddingModel {
+  readonly descriptor: ModelDescriptor;
+
+  constructor(
+    private readonly llm: LocalLlmPort,
+    private readonly spec: BundledModelSpec,
+  ) {
+    this.descriptor = bundledEmbeddingDescriptor(spec);
+  }
+
+  async embed(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
+    return this.llm.embed(this.spec.id, texts);
   }
 }

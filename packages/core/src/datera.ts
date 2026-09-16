@@ -101,7 +101,8 @@ import {
   OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel, type EmbeddingModel,
 } from './models/embeddings.js';
 import {
-  BUNDLED_MODELS, BundledChatModel, bundledModel, recommendBundledModel,
+  BUNDLED_EMBEDDING_MODELS, BUNDLED_MODELS, BundledChatModel, BundledEmbeddingModel,
+  bundledEmbeddingDescriptor, bundledModel, recommendBundledModel,
   type BundledModelSpec,
 } from './models/bundled.js';
 import type { LocalModelStatus } from './ports/llm.js';
@@ -868,10 +869,18 @@ export class Datera {
     const selected = await this.selectedChatModelDescriptor();
     const selectedEmbedding = await this.selectedEmbeddingDescriptor();
 
-    const embeddingCandidates = detected
-      .flatMap((r) => r.models)
-      .filter((m) => looksLikeEmbeddingModel(m.id))
-      .map((m) => ({ ...m, role: 'embedding' as const }));
+    const embeddingCandidates = [
+      // Bundled first: it is the one that needs nothing installed, which is what makes
+      // §1.6's "embeddings stay local" true for everyone rather than for people who
+      // already run Ollama.
+      ...(this.ports.llm === undefined
+        ? []
+        : BUNDLED_EMBEDDING_MODELS.map(bundledEmbeddingDescriptor)),
+      ...detected
+        .flatMap((r) => r.models)
+        .filter((m) => looksLikeEmbeddingModel(m.id))
+        .map((m) => ({ ...m, role: 'embedding' as const })),
+    ];
 
     return {
       bundled,
@@ -913,6 +922,13 @@ export class Datera {
   private async embeddingModel(): Promise<EmbeddingModel | null> {
     const descriptor = await this.selectedEmbeddingDescriptor();
     if (descriptor === null) return null;
+
+    // The bundled embedder (§1.6). Its whole point is that someone with a remote chat
+    // model and no local runtime still embeds on their own machine.
+    if (descriptor.tier === 'bundled') {
+      if (this.ports.llm === undefined) return null;
+      return new BundledEmbeddingModel(this.ports.llm, bundledModel(descriptor.id));
+    }
 
     const baseUrl =
       descriptor.endpoint ?? (descriptor.provider === 'openai' ? 'https://api.openai.com' : null);
@@ -1040,7 +1056,7 @@ export class Datera {
     const byId = new Map(statuses.map((s) => [s.modelId, s]));
     const recommended = (await this.recommendedBundledModel())?.id ?? null;
 
-    return BUNDLED_MODELS.map((spec) => {
+    return [...BUNDLED_MODELS, ...BUNDLED_EMBEDDING_MODELS].map((spec) => {
       const status = byId.get(spec.id);
       return {
         modelId: spec.id,
