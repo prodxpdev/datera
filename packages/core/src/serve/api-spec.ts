@@ -71,6 +71,26 @@ export const API_ENDPOINTS: readonly ApiEndpoint[] = [
       `  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`,
   },
   {
+    method: 'POST',
+    path: '/api/operations',
+    summary: 'Call an authored operation by name',
+    description:
+      'Calls a named, typed operation this workspace defines — the shape of the call is the ' +
+      "operation's own parameters, not a SQL string. A read returns rows. A write returns a " +
+      'PROPOSAL and applies nothing: §6 says a change is never executed without an explicit ' +
+      'confirm, and confirming is a human act. Ratify it with /api/writes/confirm.',
+    requiresAuth: true,
+    body: [
+      { name: 'dataset', type: 'string', required: true, description: 'Dataset the operation belongs to' },
+      { name: 'name', type: 'string', required: true, description: 'Operation name' },
+      { name: 'arguments', type: 'object', required: false, description: 'Values for its declared parameters' },
+    ],
+    returns: '{ "kind": "read" | "write", "rows"?: unknown[][], "proposal"?: WriteProposal }',
+    example: `curl -X POST -H 'authorization: Bearer $TOKEN' -H 'content-type: application/json' \\
+  -d '{"dataset":"ungrouped","name":"revenue_for_product","arguments":{"product":"Trail Hoodie"}}' \\
+  $DATERA_URL/api/operations`,
+  },
+  {
     method: 'GET',
     path: '/api/tools',
     summary: 'List the auto-generated tools',

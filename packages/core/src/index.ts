@@ -127,6 +127,13 @@ export { assertWithinDataset, extractTableReferences } from './query/scope.js';
 export { summariseTouched } from './query/touched.js';
 export { completionsAt, referencedTables, starterSql } from './query/schema-graph.js';
 export { suggestQuestions } from './query/suggest.js';
+export {
+  assertOperationName, assertParametersMatch, bindArguments, inlineArguments,
+  operationTool, placeholdersIn,
+} from './serve/operations.js';
+export type {
+  AuthoredOperation, CreateOperationInput, OperationParameter, OperationParameterType,
+} from './serve/operations.js';
 export { explainRefusal } from './query/explain-refusal.js';
 export type { RefusalExplanation } from './query/explain-refusal.js';
 export type { Suggestion, SuggestionKind } from './query/suggest.js';
@@ -173,5 +180,5 @@ export { deriveLifecycle } from './teaching/derive.js';
 export type { Lifecycle, LifecycleLayer, LifecycleTransform, LifecycleLane } from './teaching/lifecycle.js';
 export type { TouchedSummary, TouchedTable, TouchedColumn, ColumnRoleInQuery } from './query/touched.js';
 export type { TableReference, ScopeCheck } from './query/scope.js';
-export type { ModelCatalogue, BundledModelOffer } from './datera.js';
+export type { ModelCatalogue, BundledModelOffer, OperationResult } from './datera.js';
 export { apiKeySecretName } from './datera.js';

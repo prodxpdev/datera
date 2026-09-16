@@ -4,6 +4,7 @@ import type { Source, SourceDetection, SourceKind } from '../sources/types.js';
 import type { Dataset } from '../datasets/types.js';
 import type { AuthoredRelationship } from '../datasets/authoring.js';
 import type { ColumnDefinition, EntityDefinition } from '../dictionary/types.js';
+import type { AuthoredOperation } from '../serve/operations.js';
 
 export const CATALOG_SCHEMA = '_datera';
 
@@ -83,6 +84,19 @@ export class Catalog {
       CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.dictionary_entities (
         source_id VARCHAR PRIMARY KEY,
         definition_json VARCHAR NOT NULL
+      )`);
+    // Authored operations (§8). Parameters as JSON for the same reason the dictionary is:
+    // their shape has room to grow, and a migration per field is not worth it.
+    await this.engine.executeInternal(`
+      CREATE TABLE IF NOT EXISTS ${CATALOG_SCHEMA}.operations (
+        id VARCHAR PRIMARY KEY,
+        dataset_id VARCHAR NOT NULL,
+        name VARCHAR NOT NULL,
+        description VARCHAR NOT NULL,
+        sql VARCHAR NOT NULL,
+        parameters_json VARCHAR NOT NULL,
+        kind VARCHAR NOT NULL,
+        created_at VARCHAR NOT NULL
       )`);
   }
 
@@ -200,6 +214,44 @@ export class Catalog {
     );
     const row = result.rows[0];
     return row === undefined ? null : String(row[0]);
+  }
+
+  async insertOperation(operation: AuthoredOperation): Promise<void> {
+    await this.engine.executeInternal(
+      `INSERT INTO ${CATALOG_SCHEMA}.operations
+        (id, dataset_id, name, description, sql, parameters_json, kind, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        operation.id, operation.datasetId, operation.name, operation.description,
+        operation.sql, JSON.stringify(operation.parameters), operation.kind, operation.createdAt,
+      ],
+    );
+  }
+
+  async listOperations(datasetId?: string): Promise<readonly AuthoredOperation[]> {
+    const where = datasetId === undefined ? '' : ' WHERE dataset_id = ?';
+    const result = await this.engine.executeInternal(
+      `SELECT id, dataset_id, name, description, sql, parameters_json, kind, created_at
+       FROM ${CATALOG_SCHEMA}.operations${where} ORDER BY name`,
+      datasetId === undefined ? [] : [datasetId],
+    );
+
+    return result.rows.map((row) => ({
+      id: String(row[0]),
+      datasetId: String(row[1]),
+      name: String(row[2]),
+      description: String(row[3]),
+      sql: String(row[4]),
+      parameters: JSON.parse(String(row[5])) as AuthoredOperation['parameters'],
+      kind: String(row[6]) as AuthoredOperation['kind'],
+      createdAt: String(row[7]),
+    }));
+  }
+
+  async deleteOperation(id: string): Promise<void> {
+    await this.engine.executeInternal(
+      `DELETE FROM ${CATALOG_SCHEMA}.operations WHERE id = ?`, [id],
+    );
   }
 
   async insertRelationship(rel: AuthoredRelationship): Promise<void> {

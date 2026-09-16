@@ -101,11 +101,18 @@ export class Engine {
    * Run SQL that came from outside Datera. Guarded: anything that is not a single
    * SELECT or EXPLAIN is refused before DuckDB ever sees it as an executable statement.
    */
-  async executeUserQuery(sql: string, monotonicMs: () => number): Promise<UserQueryResult> {
+  async executeUserQuery(
+    sql: string,
+    monotonicMs: () => number,
+    params?: readonly SqlParam[],
+  ): Promise<UserQueryResult> {
+    // The guard runs against the statement, and the parameters are bound after it — which
+    // is the only ordering that is safe. A value can never become part of the statement,
+    // so there is nothing a parameter could do to change what the guard just approved.
     const check = await assertReadOnlySql(this.conn, sql);
     const started = monotonicMs();
     try {
-      const resultSet = await this.conn.run(check.sql);
+      const resultSet = await this.conn.run(check.sql, params);
       return { resultSet, check, durationMs: monotonicMs() - started };
     } catch (e) {
       throw asDateraError(e, 'SQL_ERROR', 'Query failed', { sql: check.sql });

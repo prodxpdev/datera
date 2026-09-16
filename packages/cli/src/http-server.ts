@@ -89,6 +89,21 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
       return;
     }
 
+    if (url === '/api/operations' && req.method === 'POST') {
+      const parsed = JSON.parse(await readBody(req)) as {
+        dataset?: string; name?: string; arguments?: Record<string, unknown>;
+      };
+      if (typeof parsed.dataset !== 'string' || typeof parsed.name !== 'string') {
+        respond(res, 400, { error: '"dataset" and "name" are required.' });
+        return;
+      }
+      respond(
+        res, 200,
+        await options.datera.callOperation(parsed.dataset, parsed.name, parsed.arguments ?? {}),
+      );
+      return;
+    }
+
     if (url.startsWith('/api/tools')) {
       respond(res, 200, { tools: await options.datera.listTools() });
       return;

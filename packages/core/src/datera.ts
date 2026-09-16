@@ -3,7 +3,7 @@ import { Engine } from './engine/engine.js';
 import { assertExtensionLoaded } from './engine/extensions.js';
 import { assertReadOnlySql } from './engine/read-only.js';
 import { qualified, quoteIdent, quoteLiteral, slugifyIdent } from './engine/sql.js';
-import type { DuckDBDriverPort, ResultSet, StatementKind } from './ports/duckdb.js';
+import type { DuckDBDriverPort, ResultSet, SqlParam, StatementKind } from './ports/duckdb.js';
 import type { Ports } from './ports/index.js';
 import { Catalog } from './workspace/catalog.js';
 import {
@@ -101,6 +101,10 @@ import {
   type BundledModelSpec,
 } from './models/bundled.js';
 import type { LocalModelStatus } from './ports/llm.js';
+import {
+  assertOperationName, assertParametersMatch, bindArguments, inlineArguments, operationTool,
+  type AuthoredOperation, type CreateOperationInput,
+} from './serve/operations.js';
 import { draftDictionary } from './dictionary/draft.js';
 import type { GraphTable, SchemaGraph } from './query/schema-graph.js';
 import {
@@ -194,6 +198,28 @@ export interface BundledModelOffer {
   readonly ready: boolean;
   readonly bytesOnDisk: number;
   readonly unavailableReason: string | null;
+}
+
+/**
+ * A stand-in value of the right type, used only to make a parameterised statement
+ * parseable while its kind is measured. Never executed, never stored.
+ */
+function sampleFor(type: 'string' | 'number' | 'boolean' | 'date'): string | number | boolean {
+  switch (type) {
+    case 'number': return 0;
+    case 'boolean': return false;
+    case 'date': return '1970-01-01';
+    case 'string': return '';
+  }
+}
+
+/** What calling an authored operation produced: rows, or a change awaiting confirmation. */
+export interface OperationResult {
+  readonly kind: 'read' | 'write';
+  readonly columns?: readonly string[] | undefined;
+  readonly rows?: readonly (readonly unknown[])[] | undefined;
+  /** Present for a write. Nothing has been applied until this is confirmed.  */
+  readonly proposal?: WriteProposal | undefined;
 }
 
 export interface ModelCatalogue {
@@ -695,7 +721,12 @@ export class Datera {
    * another dataset is acceptance criterion §12.4 and belongs to Phase 3, which is why
    * this method takes an explicit datasetId now rather than being retrofitted later.
    */
-  async query(datasetId: string, sql: string): Promise<QueryResult> {
+  async query(
+    datasetId: string,
+    sql: string,
+    /** Bound after the guard has approved the statement, never interpolated into it. */
+    params?: readonly SqlParam[],
+  ): Promise<QueryResult> {
     const dataset = await this.getDataset(datasetId);
     await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
 
@@ -709,8 +740,10 @@ export class Datera {
     await assertReadOnlySql(this.engine.classificationConnection(), sql);
     await this.assertScoped(sql, dataset);
 
-    const { resultSet, check, durationMs } = await this.engine.executeUserQuery(sql, () =>
-      this.ports.clock.monotonicMs(),
+    const { resultSet, check, durationMs } = await this.engine.executeUserQuery(
+      sql,
+      () => this.ports.clock.monotonicMs(),
+      params,
     );
 
     return {
@@ -1688,6 +1721,130 @@ export class Datera {
   /**
    * Propose a write. Nothing is executed — this builds the preview the gate needs.
    */
+  // ------------------------------------------- authored operations (§8, §3a)
+
+  /**
+   * Save a named, typed, parameterised statement and serve it as its own tool.
+   *
+   * Everything risky is decided here rather than at call time, because authoring happens
+   * once with a human watching and calling happens repeatedly without one:
+   *
+   *  - the name must be usable as an MCP tool name and a URL segment;
+   *  - the declared parameters and the statement's placeholders must agree exactly;
+   *  - the statement must stay inside its dataset, checked with the same AST walk the
+   *    query path uses;
+   *  - the kind is **measured** from DuckDB's parser, never taken from the name. Someone
+   *    naming a DELETE `create_order` does not get it treated as a read.
+   */
+  async createOperation(input: CreateOperationInput): Promise<AuthoredOperation> {
+    const dataset = await this.getDataset(input.datasetId);
+    assertOperationName(input.name);
+    assertParametersMatch(input.sql, input.parameters);
+
+    const existing = await this.catalog.listOperations(input.datasetId);
+    if (existing.some((o) => o.name === input.name)) {
+      throw new DateraError(
+        'DUPLICATE_NAME',
+        `An operation called "${input.name}" already exists in "${dataset.name}".`,
+        { name: input.name, datasetId: input.datasetId },
+      );
+    }
+
+    // Classified with the placeholders replaced by literals: DuckDB cannot parse `$name`,
+    // and what is being asked is "what kind of statement is this", which the shape answers
+    // regardless of the values.
+    const probe = {
+      sql: inlineArguments(
+        { ...(input as unknown as AuthoredOperation), parameters: input.parameters },
+        Object.fromEntries(input.parameters.map((p) => [p.name, sampleFor(p.type)])),
+      ),
+    };
+
+    await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
+    await assertWriteInDataset(
+      this.engine.classificationConnection(), probe.sql, dataset.schemaName, dataset.name,
+    );
+
+    const classification = await this.engine
+      .classificationConnection()
+      .classify(probe.sql);
+    const kinds = classification.statements.map((st) => st.kind);
+
+    if (classification.statements.length !== 1) {
+      throw new DateraError(
+        'INVALID_ARGUMENT',
+        'An operation is exactly one statement. Batching would make one call do two things, only one of which its name describes.',
+        { statementCount: classification.statements.length },
+      );
+    }
+
+    const writes = kinds.some((k) => k === 'UPDATE' || k === 'DELETE' || k === 'INSERT');
+    // Anything not provably a read is treated as a write: it then goes through the confirm
+    // gate, which is the safe direction to be wrong in.
+    const reads = kinds.every((k) => k === 'SELECT' || k === 'EXPLAIN');
+
+    const operation: AuthoredOperation = {
+      id: this.makeId(),
+      datasetId: input.datasetId,
+      name: input.name,
+      description: input.description,
+      sql: input.sql,
+      parameters: input.parameters,
+      kind: writes || !reads ? 'write' : 'read',
+      createdAt: this.ports.clock.now().toISOString(),
+    };
+
+    await this.catalog.insertOperation(operation);
+    this.ports.logger.log('info', 'Operation authored', {
+      name: operation.name, kind: operation.kind, datasetId: operation.datasetId,
+    });
+    return operation;
+  }
+
+  async listOperations(datasetId?: string): Promise<readonly AuthoredOperation[]> {
+    return this.catalog.listOperations(datasetId);
+  }
+
+  async deleteOperation(id: string): Promise<void> {
+    await this.catalog.deleteOperation(id);
+  }
+
+  /**
+   * Call an authored operation.
+   *
+   * A read runs and returns rows. A write **proposes** and returns the proposal — §6 says
+   * a write is never executed without an explicit confirm, and an agent cannot confirm.
+   * The caller ratifies with `confirmWrite`, exactly as they would for any other proposed
+   * change; there is no second, quieter path to modifying data.
+   */
+  async callOperation(
+    datasetId: string,
+    name: string,
+    args: Readonly<Record<string, unknown>> = {},
+  ): Promise<OperationResult> {
+    const operations = await this.catalog.listOperations(datasetId);
+    const operation = operations.find((o) => o.name === name);
+    if (operation === undefined) {
+      throw new DateraError('INVALID_ARGUMENT', `No operation called "${name}" in this dataset.`, {
+        name, datasetId,
+      });
+    }
+
+    if (operation.kind === 'write') {
+      // Escaped rather than bound — see inlineArguments for why the write preview makes
+      // that the safer choice. The statement then goes through the ordinary write path,
+      // gate included.
+      return {
+        kind: 'write',
+        proposal: await this.proposeWrite(datasetId, inlineArguments(operation, args)),
+      };
+    }
+
+    const bound = bindArguments(operation, args);
+    const result = await this.query(datasetId, bound.sql, bound.values);
+    return { kind: 'read', columns: result.columns.map((c) => c.name), rows: result.rows };
+  }
+
   async proposeWrite(datasetId: string, sql: string): Promise<WriteProposal> {
     const dataset = await this.getDataset(datasetId);
 
@@ -1957,7 +2114,17 @@ export class Datera {
       });
     }
 
-    return toolsFor(contexts);
+    const generated = toolsFor(contexts);
+
+    // Authored operations, appended. A write operation is offered only where its dataset
+    // has a grant — the same rule the generated propose tool follows, because Datera does
+    // not advertise a tool that would fail when called.
+    const writable = new Set(contexts.filter((c) => c.canWrite).map((c) => c.dataset.id));
+    const authored = (await this.catalog.listOperations())
+      .filter((o) => o.kind === 'read' || writable.has(o.datasetId))
+      .map(operationTool);
+
+    return [...generated, ...authored];
   }
 
   /**
@@ -1982,6 +2149,26 @@ export class Datera {
     };
 
     const datasets = await this.catalog.listDatasets();
+
+    // Authored operations are checked first: a workspace's own named operation should win
+    // over anything generated, and its name cannot collide with one (the generated names
+    // all carry a `query_`/`search_`/`propose_write_` prefix or are `describe_schema`).
+    const operation = (await this.catalog.listOperations()).find((o) => o.name === name);
+    if (operation !== undefined) {
+      trace.add({ kind: 'route', label: 'Authored operation', detail: `${operation.name} (${operation.kind})` });
+      try {
+        const result = await this.callOperation(operation.datasetId, operation.name, args);
+        const built = trace.build('structured', true);
+        await this.record(built, { origin: 'tool', rowsReturned: result.rows?.length ?? 0, ok: true });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          isError: false,
+          trace: built,
+        };
+      } catch (e) {
+        return fail((e as { message?: string }).message ?? String(e), operation.datasetId);
+      }
+    }
 
     if (name === 'describe_schema') {
       const datasetId = typeof args['dataset'] === 'string' ? args['dataset'] : DEFAULT_DATASET_ID;
