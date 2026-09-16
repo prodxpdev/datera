@@ -139,13 +139,23 @@ describe('Shape and Edit', () => {
     });
   });
 
-  describe('Edit — the write gate (Phase 6)', () => {
-    it('shows writes as off, and says why', async () => {
-      await page.click('[data-nav="changes"]');
-      await page.waitForSelector('.edit');
+  /**
+   * The write path, after it stopped being its own nav item.
+   *
+   * Enabling writes is a property of a dataset, so it lives in Data beside the dataset —
+   * next to the copy-on-write step that makes it possible at all. Making a change is
+   * writing a statement, so it happens in Query, in the same editor as every read. Two
+   * surfaces for one editor was the thing to fix; the gate itself is untouched, and these
+   * tests still assert it holds.
+   */
+  describe('The write gate, in its new homes (Phase 6)', () => {
+    it('shows writes as off, and says why, beside the dataset in Data', async () => {
+      await page.click('[data-nav="data"]');
+      await page.click('[data-data="access"]');
+      await page.waitForSelector('.writeaccess');
 
-      const text = await page.textContent('.edit');
-      expect(text).toMatch(/off by default|not enabled/i);
+      const text = await page.textContent('.writeaccess');
+      expect(text).toMatch(/off by default|not enabled|read-only/i);
     });
 
     it('refuses a grant on the connected dataset, explaining §1.2', async () => {
@@ -164,15 +174,22 @@ describe('Shape and Edit', () => {
       expect(result).toMatch(/never writes to a source|derive a working copy/i);
     });
 
-    it('grants writes on a derived dataset', async () => {
-      await page.selectOption('[data-edit-dataset]', { index: 1 }).catch(() => undefined);
-      await page.click('[data-grant]');
-      await expect.poll(async () => page.textContent('.edit'), { timeout: 15_000 }).toMatch(/enabled|granted/i);
+    it('grants writes on a derived dataset, from Data', async () => {
+      const derived = await workingCopyId(page);
+      await page.click(`[data-grant="${derived}"]`);
+      await expect
+        .poll(async () => page.textContent('.writeaccess'), { timeout: 15_000 })
+        .toMatch(/enabled|granted/i);
     });
 
     it('previews a proposed change without applying it — the gate (§12.7)', async () => {
-      await page.fill('.edit textarea', `UPDATE sheet SET product_name = 'Renamed' WHERE product_sku = 'SKU-1'`);
-      await page.click('[data-propose]');
+      // Same editor as every read. The dataset switcher in the chrome decides what it
+      // runs against, which is the point of hoisting it there.
+      await switchToDerived(page);
+      await openQuery(page);
+
+      await page.fill('[data-sql]', `UPDATE sheet SET product_name = 'Renamed' WHERE product_sku = 'SKU-1'`);
+      await page.click('[data-runsql]');
       await page.waitForSelector('.writepreview', { timeout: 30_000 });
 
       const preview = await page.textContent('.writepreview');
@@ -196,34 +213,95 @@ describe('Shape and Edit', () => {
     });
 
     it('warns loudly when a proposal would touch every row', async () => {
-      await page.fill('.edit textarea', 'DELETE FROM sheet');
-      await page.click('[data-propose]');
+      await page.fill('[data-sql]', 'DELETE FROM sheet');
+      await page.click('[data-runsql]');
       await page.waitForSelector('.writewarn', { timeout: 30_000 });
 
       expect(await page.textContent('.writewarn')).toMatch(/every row|all 9/i);
     });
 
-    it('applies only on confirm, and can be undone', async () => {
-      await page.fill('.edit textarea', `DELETE FROM sheet WHERE product_sku = 'SKU-3'`);
-      await page.click('[data-propose]');
+    it('applies only on confirm', async () => {
+      await page.fill('[data-sql]', `DELETE FROM sheet WHERE product_sku = 'SKU-3'`);
+      await page.click('[data-runsql]');
       await page.waitForSelector('.writepreview', { timeout: 30_000 });
 
       await page.click('[data-confirm-write]');
-      await expect.poll(async () => page.textContent('.edit'), { timeout: 30_000 }).toMatch(/applied/i);
+      await expect.poll(async () => countRows(page), { timeout: 30_000 }).toBe(6);
+    });
 
-      const afterApply = await countRows(page);
-      expect(afterApply).toBe(6);
+    it('records the write in an audit log in Data, and undoes it there', async () => {
+      // The history of what changed a dataset belongs with the dataset, not in a third
+      // place — that is the same reason the grant moved.
+      await page.click('[data-nav="data"]');
+      await page.click('[data-data="access"]');
+      await page.waitForSelector('.writelog');
+      // Polled: the log renders immediately and fills in from an async read, so a direct
+      // assertion here races the refresh rather than testing anything.
+      await expect
+        .poll(async () => page.textContent('.writelog'), { timeout: 30_000 })
+        .toMatch(/DELETE/);
 
       await page.click('[data-undo]');
       await expect.poll(async () => countRows(page), { timeout: 30_000 }).toBe(9);
     });
 
-    it('records the write in a visible audit log', async () => {
-      const text = await page.textContent('.writelog');
-      expect(text).toMatch(/DELETE/);
+    it('explains the refusal, and offers the grant, when writes are off', async () => {
+      await page.click('[data-nav="data"]');
+      await page.click('[data-data="access"]');
+      await page.click(`[data-revoke="${await workingCopyId(page)}"]`);
+
+      await openQuery(page);
+      await page.fill('[data-sql]', `DELETE FROM sheet WHERE product_sku = 'SKU-2'`);
+      await page.click('[data-runsql]');
+      await page.waitForSelector('[data-refusal]', { timeout: 30_000 });
+
+      // The refusal names the consequence and offers the fix where the refusal happened,
+      // rather than sending the user to look for a setting.
+      expect(await page.textContent('[data-refusal]')).toMatch(/writes are not enabled|enable writes/i);
+      expect(await page.locator('[data-grant-here]').count()).toBe(1);
+      expect(await countRows(page)).toBe(9);
     });
   });
 });
+
+/**
+ * Open Query and wait for it to finish loading before typing into it.
+ *
+ * Mounting the view reads the schema and writes a starter query into the editor. Filling
+ * the editor before that lands means the starter SQL overwrites what was typed, and Run
+ * then executes a harmless SELECT — which fails the test in a way that looks like the
+ * feature is broken rather than the test being early.
+ */
+async function openQuery(page: Page): Promise<void> {
+  await page.click('[data-nav="query"]');
+  await page.waitForSelector('[data-sql]');
+  await expect
+    .poll(async () => page.inputValue('[data-sql]'), { timeout: 30_000 })
+    .not.toBe('');
+}
+
+/**
+ * The working copy specifically.
+ *
+ * `find(d => d.kind === 'derived')` is ambiguous here: applying a normalization also
+ * produces a derived dataset, so the loose match returned whichever the catalog listed
+ * first and the grant and the revoke could land on different datasets.
+ */
+async function workingCopyId(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const api = (globalThis as unknown as {
+      datera: { listDatasets(): Promise<{ id: string; name: string; kind: string }[]> };
+    }).datera;
+    const copy = (await api.listDatasets()).find((d) => d.kind === 'derived' && /copy/i.test(d.name));
+    if (copy === undefined) throw new Error('no working copy in this workspace');
+    return copy.id;
+  });
+}
+
+/** Point the chrome's dataset switcher at the working copy. */
+async function switchToDerived(page: Page): Promise<void> {
+  await page.selectOption('[data-dataset-switch]', await workingCopyId(page));
+}
 
 async function listKinds(page: Page): Promise<string[]> {
   return page.evaluate(async () =>
@@ -249,15 +327,12 @@ async function normalizedTables(page: Page): Promise<string[]> {
 }
 
 async function countRows(page: Page): Promise<number> {
-  const rows = await page.evaluate(async () => {
+  const id = await workingCopyId(page);
+  const rows = await page.evaluate(async (datasetId: string) => {
     const api = (globalThis as unknown as {
-      datera: {
-        listDatasets(): Promise<{ id: string; kind: string }[]>;
-        query(d: string, s: string): Promise<{ rows: unknown[][] }>;
-      };
+      datera: { query(d: string, s: string): Promise<{ rows: unknown[][] }> };
     }).datera;
-    const derived = (await api.listDatasets()).find((d) => d.kind === 'derived');
-    return (await api.query(derived!.id, 'SELECT count(*) FROM sheet')).rows;
-  });
+    return (await api.query(datasetId, 'SELECT count(*) FROM sheet')).rows;
+  }, id);
   return Number(rows[0]?.[0]);
 }

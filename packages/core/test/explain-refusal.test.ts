@@ -73,3 +73,15 @@ describe('explaining a refusal', () => {
     expect(odd?.whatItWouldHaveDone).not.toMatch(/\d+ rows/);
   });
 });
+
+describe('explaining a refused write', () => {
+  it('explains an ungranted write as the default, not a malfunction', () => {
+    const explained = explainRefusal(
+      new DateraError('WRITE_NOT_PERMITTED', 'Writes are not enabled for dataset "x".', {}),
+    );
+    expect(explained?.whatItWouldHaveDone).toMatch(/off by default/i);
+    expect(explained?.whatToDoInstead).toMatch(/Write access|enable writes/i);
+    // Enabling is not applying: the gate survives the grant, and saying so is the point.
+    expect(explained?.whatToDoInstead).toMatch(/previewed|confirm/i);
+  });
+});

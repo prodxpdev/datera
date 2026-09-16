@@ -14,9 +14,10 @@ import { Privacy } from './Privacy.js';
  * a sidebar that gives setup the same weight as querying tells a new user the product is
  * mostly setup.
  *
- * One deliberate duplication survives: the write grant appears here *and* stays visible
- * in Changes. A permission you cannot see from the place it takes effect is a permission
- * people forget they granted.
+ * Write grants are the one thing that did *not* end up here. They belong beside the
+ * datasets they apply to, in Data — a permission you cannot see from the place it takes
+ * effect is a permission people forget they granted. Privacy shows which datasets are
+ * currently writable, and points at where to change that.
  */
 type Tab = 'models' | 'servers' | 'serving' | 'privacy';
 
@@ -80,7 +81,7 @@ export function Settings({
             {tab === 'models' && <Models api={api} datasetId={datasetId} />}
             {tab === 'servers' && <Environments api={api} datasets={datasets} />}
             {tab === 'serving' && <Connect api={api} />}
-            {tab === 'privacy' && <Privacy api={api} datasets={datasets} onChanged={onChanged} />}
+            {tab === 'privacy' && <Privacy api={api} datasets={datasets} />}
           </div>
         </div>
       </div>

@@ -133,6 +133,7 @@ export interface DateraApi {
   // ---- Phase 6 -----------------------------------------------------------
   canWrite(datasetId: string): Promise<boolean>;
   grantWrite(datasetId: string): Promise<void>;
+  enableWrites(datasetId: string): Promise<{ datasetId: string; derived: boolean }>;
   revokeWrite(datasetId: string): Promise<void>;
   proposeWrite(datasetId: string, sql: string): Promise<WriteProposal>;
   proposeWriteFromQuestion(datasetId: string, instruction: string): Promise<WriteProposal>;
@@ -208,6 +209,7 @@ export const IPC = {
   pickDirectory: 'datera:pickDirectory',
   canWrite: 'datera:canWrite',
   grantWrite: 'datera:grantWrite',
+  enableWrites: 'datera:enableWrites',
   revokeWrite: 'datera:revokeWrite',
   proposeWrite: 'datera:proposeWrite',
   proposeWriteFromQuestion: 'datera:proposeWriteFromQuestion',

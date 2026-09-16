@@ -5,59 +5,38 @@ import type { DateraApi } from '../shared/contract.js';
 /**
  * What gets recorded, and what may be changed (spec §8a, §6).
  *
- * Two settings that look unrelated and are not: both answer "what can this program do
- * without asking me again". Payload capture decides whether the log becomes a second copy
- * of your data; a write grant decides whether a dataset can be modified at all.
+ * Retention and payload capture live here: they are set once and revisited rarely, which
+ * is what Settings is for. Write grants do not — they moved to Data, beside the datasets
+ * they apply to. What remains of them here is a read-only summary, because "what can
+ * currently change my data" is a privacy question even when the switch is elsewhere.
  *
- * Both are shown with their current state spelled out rather than as a bare toggle — a
- * checkbox tells you its position, not its consequence.
+ * Each setting is shown with its consequence spelled out rather than as a bare toggle: a
+ * checkbox tells you its position, not what it means.
  */
 export function Privacy({
   api,
   datasets,
-  onChanged,
 }: {
   readonly api: DateraApi;
   readonly datasets: readonly Dataset[];
-  readonly onChanged: () => void;
 }): JSX.Element {
   const [retention, setRetention] = useState<RetentionPolicy | null>(null);
   const [capture, setCapture] = useState(false);
-  const [grants, setGrants] = useState<ReadonlyMap<string, boolean>>(new Map());
-  const [busy, setBusy] = useState(false);
+  const [granted, setGranted] = useState<readonly string[]>([]);
 
   const refresh = useCallback(async () => {
     setRetention(await api.getTraceRetention());
     setCapture(await api.getTracePayloadCapture());
-    const next = new Map<string, boolean>();
+    const writable: string[] = [];
     for (const dataset of datasets) {
-      next.set(dataset.id, await api.canWrite(dataset.id));
+      if (await api.canWrite(dataset.id)) writable.push(dataset.name);
     }
-    setGrants(next);
+    setGranted(writable);
   }, [api, datasets]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  const toggleGrant = useCallback(
-    async (dataset: Dataset) => {
-      setBusy(true);
-      try {
-        if (grants.get(dataset.id) === true) await api.revokeWrite(dataset.id);
-        else await api.grantWrite(dataset.id);
-        await refresh();
-        onChanged();
-      } catch {
-        // The engine refuses a grant on a connected dataset by design; the row below
-        // already explains why, so there is nothing useful to add here.
-        await refresh();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [api, grants, refresh, onChanged],
-  );
 
   return (
     <div className="privacy">
@@ -101,35 +80,22 @@ export function Privacy({
       </section>
 
       <section className="shapebox">
-        <h3>Write grants</h3>
+        <h3>What may change your data</h3>
         <p>
-          Off by default, per dataset, revocable. A dataset that reads your files directly can
-          never be granted writes at all — that is invariant §1.2, not a setting.
+          Write grants live in <b>Data → Write access</b>, beside the datasets they apply to and
+          the change log they produce. A permission belongs where its effect is visible; listing
+          it here as well would make three places to look and two of them stale.
         </p>
-
-        {datasets.map((dataset) => (
-          <div className="grantrow" key={dataset.id}>
-            <span className="gn">{dataset.name}</span>
-            <span className="gk">{dataset.kind}</span>
-            {dataset.kind === 'connected' ? (
-              <span className="gstate off">reads sources — writes impossible</span>
-            ) : (
-              <>
-                <span className={`gstate ${grants.get(dataset.id) === true ? 'on' : 'off'}`}>
-                  {grants.get(dataset.id) === true ? 'writes enabled' : 'read-only'}
-                </span>
-                <button
-                  className="btn"
-                  data-toggle-grant={dataset.id}
-                  disabled={busy}
-                  onClick={() => void toggleGrant(dataset)}
-                >
-                  {grants.get(dataset.id) === true ? 'Revoke' : 'Grant'}
-                </button>
-              </>
-            )}
+        {granted.length === 0 ? (
+          <div className="softflag">
+            Nothing in this workspace can be changed right now — every dataset is read-only.
           </div>
-        ))}
+        ) : (
+          <div className="caveat">
+            <b>{granted.length} dataset(s) can be changed:</b> {granted.join(', ')}. Changes are
+            still previewed and confirmed one at a time.
+          </div>
+        )}
       </section>
     </div>
   );

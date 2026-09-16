@@ -47,7 +47,12 @@
 .srcitem:hover { background: #f2f3f7; }
 .srcitem.on { background: var(--indigo-bg); }
 .srcitem .ic { flex: 0 0 auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; background: var(--card); border: 1px solid var(--line2); border-radius: 5px; padding: 2px 4px; color: var(--ink2); min-width: 34px; text-align: center; }
-.srcitem .nm { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+/* One line, truncated, with the full name on hover. `overflow-wrap: anywhere` let a
+   generated filename wrap to three lines and push the row's controls around. */
+.srcitem .nm {
+  font-size: 12.5px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .srcitem .ct { font-family: var(--mono); font-size: 10px; color: var(--ink3); }
 .srcitem.gone .nm { color: var(--ink3); text-decoration: line-through; }
 .emptyrail { padding: 10px 12px 14px; font-size: 12px; color: var(--ink3); }
@@ -342,8 +347,12 @@
 .newds input { flex: 1 1 100%; border: 1px solid var(--line2); border-radius: 7px; padding: 5px 9px; font-size: 12.5px; font-family: inherit; min-width: 0; }
 .newdshint { flex: 1 1 100%; font-size: 11px; color: var(--ink3); line-height: 1.45; }
 .srcbody { min-width: 0; flex: 1; }
-.movebtn { flex: 0 0 auto; font-size: 12px; color: var(--ink3); }
-.movebtn:hover { color: var(--indigo); }
+.movesel {
+  flex: 0 0 auto; max-width: 96px; font-family: var(--body); font-size: 10.5px;
+  color: var(--ink3); background: var(--card); border: 1px solid var(--line2);
+  border-radius: 6px; padding: 2px 4px;
+}
+.movesel:hover, .movesel:focus-visible { color: var(--indigo); border-color: var(--indigo-line); }
 .movemenu { padding: 7px 8px 9px; background: #f6f7f9; border-radius: 8px; margin: 2px 6px 6px; display: flex; flex-wrap: wrap; gap: 5px; }
 .movehint { flex: 1 1 100%; font-size: 11px; color: var(--ink3); margin-bottom: 2px; }
 .movemenu .btn { padding: 3px 9px; font-size: 11.5px; }

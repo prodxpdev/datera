@@ -180,6 +180,7 @@ function registerHandlers(): void {
   handle(IPC.importDataset, async (dir: string) => core().importDataset(dir));
   handle(IPC.canWrite, async (id: string) => core().canWrite(id));
   handle(IPC.grantWrite, async (id: string) => core().grantWrite(id));
+  handle(IPC.enableWrites, async (id: string) => core().enableWrites(id));
   handle(IPC.revokeWrite, async (id: string) => core().revokeWrite(id));
   handle(IPC.proposeWrite, async (id: string, sql: string) => core().proposeWrite(id, sql));
   handle(IPC.proposeWriteFromQuestion, async (id: string, q: string) => core().proposeWriteFromQuestion(id, q));

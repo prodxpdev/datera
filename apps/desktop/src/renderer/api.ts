@@ -43,7 +43,7 @@ const METHODS = [
   'deriveDataset', 'proposeNormalization', 'applyNormalization', 'proposeEnums',
   'saveVersion', 'listVersions', 'diffVersions', 'exportDataset', 'importDataset',
   'pickDirectory',
-  'canWrite', 'grantWrite', 'revokeWrite', 'proposeWrite', 'proposeWriteFromQuestion',
+  'canWrite', 'grantWrite', 'enableWrites', 'revokeWrite', 'proposeWrite', 'proposeWriteFromQuestion',
   'confirmWrite', 'undoWrite', 'listWrites', 'listTables',
 ] as const;
 

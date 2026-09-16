@@ -116,7 +116,7 @@ describe('P1-18/P1-19 Electron shell', () => {
         'moveSource', 'renameDataset', 'deleteDataset', 'apiEndpoints',
         'deriveDataset', 'proposeNormalization', 'applyNormalization', 'proposeEnums',
         'saveVersion', 'listVersions', 'diffVersions', 'exportDataset', 'importDataset',
-        'pickDirectory', 'canWrite', 'grantWrite', 'revokeWrite', 'proposeWrite',
+        'pickDirectory', 'canWrite', 'grantWrite', 'enableWrites', 'revokeWrite', 'proposeWrite',
         'proposeWriteFromQuestion', 'confirmWrite', 'undoWrite', 'listWrites', 'listTables',
       ].sort(),
     );

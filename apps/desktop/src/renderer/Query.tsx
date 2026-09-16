@@ -3,6 +3,7 @@ import {
   completionsAt, explainRefusal, referencedTables, starterSql, suggestQuestions,
   type AskResult, type CompletionResult, type QueryResult, type RefusalExplanation,
   type SchemaGraph, type Suggestion, type TouchedSummary, type TraceRecord, type TraceStage,
+  type WriteProposal,
 } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 import { SchemaMap } from './SchemaMap.js';
@@ -30,10 +31,15 @@ export function Query({
   api,
   datasetId,
   datasetName,
+  datasetKind,
+  onChanged,
 }: {
   readonly api: DateraApi;
   readonly datasetId: string;
   readonly datasetName: string;
+  /** 'connected' can never be granted writes (§1.2); 'derived' can. */
+  readonly datasetKind: string;
+  readonly onChanged: () => void;
 }): JSX.Element {
   const [graph, setGraph] = useState<SchemaGraph | null>(null);
   const [sql, setSql] = useState('');
@@ -43,6 +49,10 @@ export function Query({
   const [history, setHistory] = useState<readonly TraceRecord[]>([]);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [refusal, setRefusal] = useState<RefusalExplanation | null>(null);
+  const [proposal, setProposal] = useState<WriteProposal | null>(null);
+  const [writable, setWritable] = useState(false);
+  /** Said after an apply: the change is gone from the screen, so say what happened to it. */
+  const [trailer, setTrailer] = useState<string | null>(null);
   const [touched, setTouched] = useState<TouchedSummary | null>(null);
   const [busy, setBusy] = useState<'ask' | 'run' | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -64,9 +74,11 @@ export function Query({
       if (cancelled) return;
       setGraph(next);
       setSql(starterSql(next));
+      setWritable(await api.canWrite(datasetId));
       setAnswer(null);
       setResult(null);
       setError(null);
+      setProposal(null);
       await loadHistory();
     })();
     return () => {
@@ -127,7 +139,24 @@ export function Query({
     setTouched(null);
     setResult(null);
     setAnswer(null);
+    setProposal(null);
+    setTrailer(null);
     try {
+      // Read fresh rather than trusting the cached flag: a grant can be revoked from Data
+      // while this view is open, and a stale "writable" would send a refused statement
+      // down the propose path and report the wrong reason for stopping.
+      const mayWrite = await api.canWrite(datasetId);
+      setWritable(mayWrite);
+
+      // Which core call to make, not whether the statement is safe. The engine classifies
+      // through DuckDB's parser and refuses anything it cannot prove is a read — this
+      // text check only decides whether to ask for a preview or a result, and getting it
+      // wrong produces a refusal rather than an unguarded write.
+      if (mayWrite && /^\s*(update|delete|insert)\b/i.test(sql)) {
+        setProposal(await api.proposeWrite(datasetId, sql));
+        return;
+      }
+
       const next = await api.query(datasetId, sql);
       setResult(next);
       setTouched(await describe(api, datasetId, sql, next.rows.length));
@@ -138,6 +167,28 @@ export function Query({
       await loadHistory();
     }
   }, [api, datasetId, sql, loadHistory]);
+
+  const grantHere = useCallback(async () => {
+    setBusy('run');
+    try {
+      // May land on a working copy rather than this dataset — that is the mechanism §1.2
+      // requires, and the trailer says so rather than moving the user silently.
+      const { datasetId: landed, derived } = await api.enableWrites(datasetId);
+      setWritable(landed === datasetId);
+      setRefusal(null);
+      setError(null);
+      setTrailer(
+        derived
+          ? `Made a working copy of ${datasetName} and enabled writes on it. Switch to it in the Dataset picker above to make changes there; ${datasetName} and the files behind it are untouched.`
+          : `Writes enabled on ${datasetName}. Run the statement again to see what it would do.`,
+      );
+      onChanged();
+    } catch (e) {
+      report(e);
+    } finally {
+      setBusy(null);
+    }
+  }, [api, datasetId, datasetName, onChanged]);
 
   const recompute = useCallback(
     (text: string, cursor: number, trigger: 'typing' | 'explicit' = 'typing') => {
@@ -317,8 +368,111 @@ export function Query({
           <p className="rfw">This statement would {refusal.whatItWouldHaveDone}</p>
           <div className="rfh">What to do instead</div>
           <p className="rfw">{refusal.whatToDoInstead}</p>
+
+          {/* The fix offered where the refusal happened. Sending someone to hunt for a
+              setting is how a safety mechanism turns into an obstacle. */}
+          {datasetKind !== 'connected' && !writable && (
+            <p className="rfw">
+              <b>Writes are not enabled on {datasetName}.</b> Enabling them does not apply
+              anything — every change is still previewed with its exact row count and confirmed
+              by you first.{' '}
+              <button className="btn p" data-grant-here disabled={busy !== null} onClick={() => void grantHere()}>
+                Enable writes on {datasetName}
+              </button>
+            </p>
+          )}
+          {datasetKind === 'connected' && (
+            <p className="rfw">
+              <b>{datasetName} reads your files directly</b>, and Datera never writes to a file you
+              connected. Enabling writes makes a <b>working copy</b> and enables them there —
+              your originals stay exactly as they are.{' '}
+              <button className="btn p" data-grant-here disabled={busy !== null} onClick={() => void grantHere()}>
+                Make a working copy and enable writes
+              </button>
+            </p>
+          )}
         </div>
       )}
+
+      {proposal !== null && (
+        <div className="writepreview" data-writepreview>
+          <div className="wphead">
+            <span className={`verb ${proposal.statementKind.toLowerCase()}`}>{proposal.statementKind}</span>
+            <span className="wpcount">
+              {proposal.rowsAffected} row{proposal.rowsAffected === 1 ? '' : 's'} in {proposal.table}
+            </span>
+            <span className="wpnot">not applied</span>
+          </div>
+
+          <pre className="sqlblock">{proposal.sql}</pre>
+
+          {proposal.warnings.map((warning) => (
+            <div className="writewarn" key={warning}>⚠ {warning}</div>
+          ))}
+
+          {proposal.changes.length > 0 && (
+            <table className="changetable">
+              <thead>
+                <tr><th>column</th><th>now</th><th>would become</th></tr>
+              </thead>
+              <tbody>
+                {proposal.changes.slice(0, 8).flatMap((change, i) =>
+                  Object.keys(change.after).length === 0
+                    ? [
+                        <tr key={`del-${i}`} className="deleted">
+                          <td colSpan={3}>
+                            row {i + 1} would be deleted — {Object.entries(change.before).slice(0, 4)
+                              .map(([k, v]) => `${k}=${String(v)}`).join(', ')}
+                          </td>
+                        </tr>,
+                      ]
+                    : Object.entries(change.after).map(([column, next]) => (
+                        <tr key={`${i}-${column}`}>
+                          <td className="cn">{column}</td>
+                          <td className="was">{String(change.before[column])}</td>
+                          <td className="will">{String(next)}</td>
+                        </tr>
+                      )),
+                )}
+              </tbody>
+            </table>
+          )}
+
+          <div className="pickrow">
+            <button
+              className="btn p"
+              data-confirm-write
+              disabled={busy !== null}
+              onClick={() =>
+                void (async () => {
+                  setBusy('run');
+                  try {
+                    const applied = await api.confirmWrite(proposal.id);
+                    setProposal(null);
+                    setError(null);
+                    onChanged();
+                    await loadHistory();
+                    setResult(null);
+                    setTouched(null);
+                    setTrailer(`Applied — ${applied.rowsChanged} row(s) changed. Undo it in Data → Write access.`);
+                  } catch (e) {
+                    report(e);
+                  } finally {
+                    setBusy(null);
+                  }
+                })()
+              }
+            >
+              Confirm and apply
+            </button>
+            <button className="btn" disabled={busy !== null} onClick={() => setProposal(null)}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {trailer !== null && <div className="softflag" data-applied>{trailer}</div>}
 
       {answer !== null && !answer.answerable && (
         <div className="flag" role="status">

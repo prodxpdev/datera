@@ -1510,6 +1510,41 @@ export class Datera {
    * guarding that at execution time, the grant itself is refused, which puts the "no" at
    * the moment of the decision instead of the moment of the accident.
    */
+  /**
+   * Make this dataset writable, doing whatever that requires.
+   *
+   * §1.2 says Datera never writes to a connected source, and copy-on-write is how that is
+   * kept. But the mechanism had become the user's problem: derive a copy, find it in the
+   * list, grant writes on it, remember which one you are querying — three steps and a
+   * second entry in the dataset list to express one intention. The invariant is about
+   * behaviour, not about making someone perform it.
+   *
+   * So asking for writes on a connected dataset makes the shadow copy itself. It reuses
+   * the copy it already made rather than stacking up a new one per click, and the caller
+   * is told which dataset it ended up on and whether a copy was made — silently moving
+   * someone to a different dataset would be worse than the ceremony it replaces.
+   */
+  async enableWrites(datasetId: string): Promise<{ datasetId: string; derived: boolean }> {
+    const dataset = await this.getDataset(datasetId);
+
+    if (dataset.kind !== 'connected') {
+      await this.grantWrite(dataset.id);
+      return { datasetId: dataset.id, derived: false };
+    }
+
+    const existing = (await this.listDatasets()).find(
+      (d) => d.kind === 'derived' && d.derivedFrom === dataset.id,
+    );
+    if (existing !== undefined) {
+      await this.grantWrite(existing.id);
+      return { datasetId: existing.id, derived: false };
+    }
+
+    const copy = await this.deriveDataset(dataset.id, { name: `${dataset.name} working copy` });
+    await this.grantWrite(copy.datasetId);
+    return { datasetId: copy.datasetId, derived: true };
+  }
+
   async grantWrite(datasetId: string): Promise<void> {
     const dataset = await this.getDataset(datasetId);
     if (dataset.kind === 'connected') {

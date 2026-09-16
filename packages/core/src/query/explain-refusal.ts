@@ -60,6 +60,13 @@ export function explainRefusal(error: unknown): RefusalExplanation | null {
     };
   }
 
+  if (refusal.code === 'WRITE_NOT_PERMITTED') {
+    return {
+      whatItWouldHaveDone: 'change rows in this dataset. Writes are off by default on every dataset, so nothing — not you, not an agent calling the API — can modify data until someone deliberately turns them on.',
+      whatToDoInstead: 'Enable writes on this dataset in Data → Write access. That does not apply anything on its own: every change is still previewed with its exact row count and old → new values, and confirmed by you.',
+    };
+  }
+
   if (refusal.code !== 'READ_ONLY_VIOLATION') return null;
 
   if (typeof details.statementCount === 'number' && details.statementCount > 1) {

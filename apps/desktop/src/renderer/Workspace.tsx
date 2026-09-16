@@ -13,7 +13,7 @@ import { Dictionary } from './Dictionary.js';
 import { Activity } from './Activity.js';
 import { Learn } from './Learn.js';
 import { Shape } from './Shape.js';
-import { Edit } from './Edit.js';
+import { WriteAccess } from './WriteAccess.js';
 import { Settings } from './Settings.js';
 import { Mark } from './Brand.js';
 
@@ -40,8 +40,8 @@ const KIND_LABEL: Record<string, string> = {
   sqlite: 'DB', postgres: 'PG', mysql: 'MYSQL',
 };
 
-type NavId = 'data' | 'query' | 'meaning' | 'learn' | 'changes' | 'activity';
-type DataTab = 'sources' | 'shape';
+type NavId = 'data' | 'query' | 'meaning' | 'learn' | 'activity';
+type DataTab = 'sources' | 'shape' | 'access';
 
 interface NavItem {
   readonly id: NavId;
@@ -54,13 +54,12 @@ interface NavItem {
 
 /** Five destinations, named for what you are trying to do. */
 const NAV: readonly NavItem[] = [
-  { id: 'data', icon: '▤', label: 'Data', enabled: true, title: 'Data', subtitle: 'sources, groups, working copies and exports' },
-  { id: 'query', icon: '◇', label: 'Query', enabled: true, title: 'Query', subtitle: 'ask in words or write SQL — same engine, same guard' },
+  { id: 'data', icon: '▤', label: 'Data', enabled: true, title: 'Data', subtitle: 'sources, groups, working copies, and what may change them' },
+  { id: 'query', icon: '◇', label: 'Query', enabled: true, title: 'Query', subtitle: 'ask in words or write SQL — reads run, changes are previewed first' },
   { id: 'meaning', icon: '⌗', label: 'Meaning', enabled: true, title: 'Meaning', subtitle: 'what your columns mean — the layer NL and search read' },
   // Kept as a destination rather than folded in as a tab. It is the product's stated
   // reason to exist in a classroom, and a tab gets clicked a fraction as often.
   { id: 'learn', icon: '◎', label: 'Learn', enabled: true, title: 'Learn', subtitle: 'how a value actually reaches the screen, and what breaks on the way' },
-  { id: 'changes', icon: '✎', label: 'Changes', enabled: true, title: 'Changes', subtitle: 'propose a change, see exactly what it does, then confirm' },
   { id: 'activity', icon: '⇄', label: 'Activity', enabled: true, title: 'Activity', subtitle: 'what agents can call, and every request that ran' },
 ];
 
@@ -90,7 +89,6 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [newDataset, setNewDataset] = useState(false);
   const [newName, setNewName] = useState('');
-  const [movingId, setMovingId] = useState<string | null>(null);
 
   const report = useCallback((e: unknown) => {
     const err = e as { code?: string; message?: string };
@@ -215,7 +213,6 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const moveTo = async (sourceId: string, datasetId: string): Promise<void> => {
     try {
       await api.moveSource(sourceId, datasetId);
-      setMovingId(null);
       await refresh();
     } catch (e) {
       report(e);
@@ -236,6 +233,9 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   }
 
   const dataset = loaded.datasets.find((d) => d.id === datasetId) ?? loaded.datasets[0];
+  // Only connected datasets can hold a source. A derived dataset owns materialised tables
+  // copied from somewhere else, so moving a file into one would be meaningless.
+  const groupable = loaded.datasets.filter((d) => d.kind !== 'derived');
   const activeId = dataset?.id ?? 'ungrouped';
   const current = NAV.find((n) => n.id === nav) ?? NAV[0]!;
 
@@ -339,6 +339,8 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
               api={api}
               datasetId={activeId}
               datasetName={dataset?.name ?? 'Ungrouped'}
+              datasetKind={dataset?.kind ?? 'connected'}
+              onChanged={() => void refresh()}
             />
           )}
 
@@ -349,7 +351,6 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           {nav === 'learn' && <Learn api={api} />}
 
           {nav === 'activity' && <Activity api={api} />}
-          {nav === 'changes' && <Edit api={api} datasets={loaded.datasets} onChanged={() => void refresh()} />}
 
           {nav === 'data' && (
             <div className="subnav">
@@ -367,7 +368,26 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
               >
                 Shape &amp; export
               </button>
+              {/* Enabling writes is a property of a dataset, and so is the history of what
+                  changed it — both belong beside the data, next to the copy-on-write step
+                  that makes writing possible at all. */}
+              <button
+                data-data="access"
+                className={dataTab === 'access' ? 'on' : ''}
+                onClick={() => setDataTab('access')}
+              >
+                Write access
+              </button>
             </div>
+          )}
+
+          {nav === 'data' && dataTab === 'access' && (
+            <WriteAccess
+              api={api}
+              datasets={loaded.datasets}
+              onChanged={() => void refresh()}
+              onSwitchTo={setDatasetId}
+            />
           )}
 
           {nav === 'data' && dataTab === 'shape' && (
@@ -424,8 +444,10 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                   <div key={d.id} className={`dsgroup ${d.id === activeId ? 'on' : ''}`}>
                     <div className="dsh" data-pick-dataset={d.id} onClick={() => setDatasetId(d.id)}>
                       <span className="dsn">{d.name}</span>
-                      <span className="dsc">
-                        {loaded.sources.filter((s) => s.datasetId === d.id).length}
+                      <span className="dsc" title={d.kind === 'derived' ? 'a working copy' : undefined}>
+                        {d.kind === 'derived'
+                          ? 'copy'
+                          : loaded.sources.filter((s) => s.datasetId === d.id).length}
                         {!d.isDefault && (
                           <button
                             className="linkbtn dsdel"
@@ -449,37 +471,31 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                         >
                           <span className="ic">{KIND_LABEL[s.kind] ?? s.kind.toUpperCase()}</span>
                           <div className="srcbody">
-                            <div className="nm">{s.name}</div>
+                            <div className="nm" title={s.name}>{s.name}</div>
                             <div className="ct">
                               {s.status.availability === 'unavailable' ? 'unavailable' : s.kind}
                             </div>
                           </div>
-                          {loaded.datasets.length > 1 && (
-                            <button
-                              className="linkbtn movebtn"
-                              title="Move to another dataset"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMovingId(movingId === s.id ? null : s.id);
-                              }}
+
+                          {/* A labelled picker, not a ⇄ that reveals a list of buttons.
+                              Moving a source between groups is the main thing this rail is
+                              for, and it was the least discoverable control on the screen. */}
+                          {groupable.length > 1 && (
+                            <select
+                              className="movesel"
+                              data-move={s.id}
+                              value={d.id}
+                              title={`"${s.name}" is in ${d.name}. Choose another group to move it.`}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => void moveTo(s.id, e.target.value)}
                             >
-                              ⇄
-                            </button>
+                              {groupable.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.id === d.id ? `in ${t.name}` : `move to ${t.name}`}
+                                </option>
+                              ))}
+                            </select>
                           )}
-                        </div>
-                      ))}
-                    {loaded.sources
-                      .filter((s) => s.datasetId === d.id && s.id === movingId)
-                      .map((s) => (
-                        <div className="movemenu" key={`move-${s.id}`}>
-                          <div className="movehint">Move &ldquo;{s.name}&rdquo; to:</div>
-                          {loaded.datasets
-                            .filter((t) => t.id !== d.id)
-                            .map((t) => (
-                              <button key={t.id} className="btn" onClick={() => void moveTo(s.id, t.id)}>
-                                {t.name}
-                              </button>
-                            ))}
                         </div>
                       ))}
                   </div>
