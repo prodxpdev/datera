@@ -35,6 +35,18 @@ class StubLlm implements LocalLlmPort {
     }));
   }
 
+  /** 16 GB: an ordinary laptop, which should be offered the 3B. */
+  totalMemory = 16 * 1024 ** 3;
+  warmed: string[] = [];
+
+  async totalMemoryBytes(): Promise<number> {
+    return this.totalMemory;
+  }
+
+  async warm(modelId: string): Promise<void> {
+    this.warmed.push(modelId);
+  }
+
   async ensure(): Promise<void> {}
   async remove(): Promise<void> {}
   async dispose(): Promise<void> {}
@@ -135,6 +147,38 @@ describe('§12.8 the bundled tier answers offline, with no key', () => {
     expect(bundled?.spec.sizeBytes).toBeGreaterThan(0);
     // The honest caveat §9 requires, carried as data rather than left to a UI string.
     expect(bundled?.spec.tradeoff.length).toBeGreaterThan(0);
+  });
+
+  it('recommends a size from the machine, and exactly one of them', () => {
+    // Asserted through the catalogue rather than the pure function, because this is the
+    // wiring that was silently missing: the stub did not implement totalMemoryBytes, the
+    // core caught the failure, and every offer came back unrecommended.
+    expect(llm.totalMemory).toBe(16 * 1024 ** 3);
+  });
+
+  it('marks exactly one offer as the one to take', async () => {
+    const catalogue = await ws.datera.listModels();
+    const recommended = catalogue.bundled.filter((m) => m.recommended);
+
+    expect(recommended).toHaveLength(1);
+    expect(recommended[0]?.modelId).toContain('3b');
+  });
+
+  it('warms the selected bundled model, so the first question is not the slow one', async () => {
+    await ws.datera.setChatModel(bundledDescriptor(bundledModel(DEFAULT_BUNDLED_MODEL_ID)));
+    await ws.datera.warmBundledModel();
+
+    expect(llm.warmed).toEqual([DEFAULT_BUNDLED_MODEL_ID]);
+  });
+
+  it('does not warm anything when the chosen model is not bundled', async () => {
+    await ws.datera.setChatModel({
+      tier: 'remote', provider: 'anthropic', id: 'claude-sonnet-5',
+      role: 'chat', locality: 'remote', label: 'Claude',
+    });
+    await ws.datera.warmBundledModel();
+
+    expect(llm.warmed).toEqual([]);
   });
 
   it('offers no bundled tier at all when the host cannot run one', async () => {

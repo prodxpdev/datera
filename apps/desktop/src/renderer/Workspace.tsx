@@ -16,6 +16,7 @@ import { Shape } from './Shape.js';
 import { WriteAccess } from './WriteAccess.js';
 import { Settings } from './Settings.js';
 import { Mark } from './Brand.js';
+import { FirstRun } from './FirstRun.js';
 
 /**
  * The application shell.
@@ -327,6 +328,10 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
         </div>
 
         <div className="pane">
+          {/* Shown only while nothing can answer a question. A configured workspace never
+              sees it, and it is dismissible for anyone bringing their own key. */}
+          <FirstRun api={api} onDone={() => void refresh()} />
+
           {error !== null && (
             <div className="err" role="alert">
               <code>{error.code}</code> — {error.message}

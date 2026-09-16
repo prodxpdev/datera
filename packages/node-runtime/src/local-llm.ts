@@ -141,6 +141,20 @@ export class NodeLocalLlm implements LocalLlmPort {
     await rename(partial, target);
   }
 
+  async totalMemoryBytes(): Promise<number> {
+    return totalmem();
+  }
+
+  /** Load ahead of the first question, so a cold model does not read as a slow one. */
+  async warm(modelId: string): Promise<void> {
+    try {
+      await this.contextFor(modelId);
+    } catch {
+      // An optimisation. A machine that cannot warm the model will report that through
+      // status(); failing here would turn a slow first answer into no answer at all.
+    }
+  }
+
   async remove(modelId: string): Promise<void> {
     const spec = this.spec(modelId);
     if (this.loaded?.modelId === modelId) await this.dispose();

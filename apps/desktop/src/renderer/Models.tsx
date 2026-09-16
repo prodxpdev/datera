@@ -80,7 +80,11 @@ export function Models({
       setDownloading((prev) => ({ ...prev, [offer.modelId]: 0 }));
       try {
         await api.downloadBundledModel(offer.modelId);
-        setNote(`${offer.spec.label} is ready. It runs on this machine, with no key.`);
+        // Select and warm it: having downloaded two gigabytes, the user has said what
+        // they want, and making them click twice more to use it would be silly.
+        await api.setChatModel(bundledDescriptor(offer.spec));
+        void api.warmBundledModel();
+        setNote(`${offer.spec.label} is ready and selected. It runs on this machine, with no key.`);
         await refresh();
       } catch (e) {
         // Verification failures land here, and they matter: the honest thing is to say
@@ -100,6 +104,10 @@ export function Models({
   const choose = useCallback(
     async (model: ModelDescriptor) => {
       await api.setChatModel(model);
+      // Start loading it now, while the user is still looking at the picker, rather than
+      // making the first question pay for it. Measured: about 2.5s from a warm page
+      // cache, appreciably longer the first time after a download.
+      if (model.tier === 'bundled') void api.warmBundledModel();
       setNote(`Chat model set to ${model.id}.`);
       await refresh();
     },
@@ -164,7 +172,10 @@ export function Models({
               >
                 <span className="radio" />
                 <div>
-                  <div className="ot">{offer.spec.label}</div>
+                  <div className="ot">
+                    {offer.spec.label}
+                    {offer.recommended && <span className="rec">best for this machine</span>}
+                  </div>
                   {/* The trade-off is carried as data on the spec, so the picker cannot
                       describe a model more flatteringly than the catalogue does. */}
                   <div className="od">{offer.spec.tradeoff}</div>

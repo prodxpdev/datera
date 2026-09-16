@@ -118,7 +118,7 @@ export type { AskResult, Citations } from './query/ask.js';
 export type { Trace, TraceStage, StageKind, Route } from './query/trace.js';
 export {
   BUNDLED_MODELS, DEFAULT_BUNDLED_MODEL_ID, SQL_GRAMMAR,
-  BundledChatModel, bundledDescriptor, bundledModel,
+  BundledChatModel, bundledDescriptor, bundledModel, recommendBundledModel,
 } from './models/bundled.js';
 export type { BundledModelSpec } from './models/bundled.js';
 export { buildSchemaContext, summariseSchemas, SYSTEM_PROMPT } from './query/context.js';

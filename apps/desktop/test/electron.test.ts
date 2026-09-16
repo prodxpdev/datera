@@ -39,6 +39,7 @@ describe('P1-18/P1-19 Electron shell', () => {
         // a workspace layout, so a normally-launched app loaded no extensions at all. A
         // test that pins the thing it is meant to exercise is not testing it.
         ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
+        DATERA_HEADLESS: '1',
       },
     });
 
@@ -98,15 +99,16 @@ describe('P1-18/P1-19 Electron shell', () => {
     expect(probe.hasModule).toBe(false);
     // Asserted exactly, not as a subset: the bridge is the renderer's entire reach into
     // the main process, so an accidental addition should fail here and be looked at.
-    // Asserted exactly, not as a subset: the bridge is the renderer's entire reach into
-    // the main process, so an accidental addition should fail here and be looked at.
     expect([...probe.bridgeKeys].sort()).toEqual(
       [
-        'addSource', 'ask', 'buildEmbeddings', 'callTool', 'clearApiKey', 'confirmColumn', 'confirmColumns', 'schemaGraph',
+        'addSource', 'ask', 'buildEmbeddings', 'callTool', 'clearApiKey',
+        'confirmColumn', 'confirmColumns', 'schemaGraph',
         'confirmEntity', 'confirmRelationship', 'connectConfig', 'createDataset',
         'detectRelationships', 'draftDictionary', 'embeddingStatus', 'engineInfo',
         'explainTouched', 'getDictionary', 'getSchema', 'getTracePayloadCapture',
-        'getTraceRetention', 'hasApiKey', 'listDatasets', 'listModels', 'downloadBundledModel', 'removeBundledModel', 'onBundledProgress', 'listRelationships',
+        'getTraceRetention', 'hasApiKey', 'listDatasets', 'listRelationships',
+        'listModels', 'downloadBundledModel', 'removeBundledModel', 'warmBundledModel',
+        'onBundledProgress',
         'listSources', 'listTools', 'pickFiles', 'preview', 'pruneTraceLog', 'query',
         'queryTraceLog', 'removeSource', 'semanticSearch', 'setApiKey', 'setChatModel',
         'setEmbeddingModel', 'setTracePayloadCapture', 'setTraceRetention',

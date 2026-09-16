@@ -142,6 +142,7 @@ function registerHandlers(): void {
     }),
   );
   handle(IPC.removeBundledModel, async (modelId: string) => core().removeBundledModel(modelId));
+  handle(IPC.warmBundledModel, async () => core().warmBundledModel());
   handle(IPC.setChatModel, async (model: ModelDescriptor) => core().setChatModel(model));
   handle(IPC.setApiKey, async (provider: string, key: string) => core().setApiKey(provider, key));
   handle(IPC.hasApiKey, async (provider: string) => core().hasApiKey(provider));
@@ -321,6 +322,9 @@ function createWindow(): void {
     minHeight: 600,
     backgroundColor: '#fbfcfd',
     title: 'Datera',
+    // Rendered and laid out either way — Playwright drives it and layout assertions still
+    // measure correctly — but not thrown onto the user's screen.
+    show: !headless,
     // macOS takes the icon from the bundle; Windows and Linux take it from the window,
     // and a dev run on either shows the Electron default without this.
     icon: join(appRoot, 'build', 'icon.png'),
@@ -348,6 +352,15 @@ function createWindow(): void {
  * what the window or electron-builder said. A packaged build takes icon.icns and needs
  * none of this; this is purely so development and the shipped app look the same.
  */
+/**
+ * True when Electron was launched by the test suite.
+ *
+ * Tests run several app instances at once, and each one bouncing into the Dock and
+ * opening a window makes the machine unusable while the suite runs. Headless keeps the
+ * app fully functional — it just does not take over the screen.
+ */
+const headless = process.env['DATERA_HEADLESS'] === '1';
+
 function setDockIcon(): void {
   if (process.platform !== 'darwin' || app.dock === undefined) return;
 
@@ -357,6 +370,10 @@ function setDockIcon(): void {
   app.dock.setIcon(image);
   // Read back by the identity test: there is no getter for the Dock icon.
   (app as unknown as { dockIconSet?: boolean }).dockIconSet = true;
+
+  // Set, then hidden. The icon is still what the identity test asserts; it just does not
+  // appear in the Dock four times over while the suite runs.
+  if (headless) app.dock.hide();
 }
 
 app.whenReady().then(async () => {
@@ -398,6 +415,12 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+
+  // Load a selected bundled model in the background, so the first question is not the one
+  // that pays for reading two gigabytes off disk. Deliberately after the window and not
+  // awaited: the UI should be usable immediately, and a failure here costs only a slower
+  // first answer.
+  void datera.warmBundledModel().catch(() => undefined);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

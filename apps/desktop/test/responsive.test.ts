@@ -39,7 +39,7 @@ describe('Workspace layout is responsive', () => {
 
     app = await electron.launch({
       args: [appRoot],
-      env: { ...process.env, DATERA_WORKSPACE: workspacePath, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+      env: { ...process.env, DATERA_WORKSPACE: workspacePath, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', DATERA_HEADLESS: '1' },
     });
 
     page = await app.firstWindow();

@@ -108,6 +108,29 @@ export const BUNDLED_MODELS: readonly BundledModelSpec[] = [
 
 export const DEFAULT_BUNDLED_MODEL_ID = 'qwen2.5-coder-3b-instruct-q4_k_m';
 
+/**
+ * Which model to propose on this machine.
+ *
+ * Proposing the same one to everyone means proposing the smallest, and handing a 32 GB
+ * desktop the 1.5B makes the product feel worse than it is. Erring the other way is worse
+ * still: a 7B on an 8 GB laptop swaps, and the user concludes local models do not work.
+ *
+ * Thresholds are total memory, not free. Free memory moves with whatever the user happens
+ * to have open, and a recommendation that changes because a browser is running is not a
+ * recommendation — it is a coin toss with extra steps.
+ */
+export function recommendBundledModel(totalMemoryBytes: number): BundledModelSpec {
+  // Stated thresholds rather than derived from minFreeMemoryBytes. That field answers
+  // "will this run at all"; this answers "which should we suggest", and the second is a
+  // judgement about comfort — headroom for the OS, a browser, and the data itself — that
+  // does not fall out of the first.
+  const [small, medium, large] = BUNDLED_MODELS;
+
+  if (totalMemoryBytes >= 32 * GIB) return large ?? medium ?? small!;
+  if (totalMemoryBytes >= 16 * GIB) return medium ?? small!;
+  return small!;
+}
+
 export function bundledModel(modelId: string): BundledModelSpec {
   const spec = BUNDLED_MODELS.find((m) => m.id === modelId);
   if (spec === undefined) {

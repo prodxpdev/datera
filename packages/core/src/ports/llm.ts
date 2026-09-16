@@ -52,6 +52,28 @@ export interface LocalLlmPort {
   status(): Promise<readonly LocalModelStatus[]>;
 
   /**
+   * Total physical memory, so the core can recommend a size.
+   *
+   * Reported by the host rather than measured in the core, which has no business knowing
+   * what a machine is. The recommendation *policy* stays in the core, where it is pure
+   * and testable.
+   */
+  totalMemoryBytes(): Promise<number>;
+
+  /**
+   * Load a model into memory ahead of being asked anything.
+   *
+   * Measured on this project: about two and a half seconds from a warm page cache, and
+   * appreciably longer the first time after a download. Paying that on the first question
+   * makes the model look slow when it is merely cold — so it is paid when the model is
+   * chosen instead, while the user is still looking at the picker.
+   *
+   * Never throws: warming is an optimisation, and a failure here must not stop someone
+   * asking a question.
+   */
+  warm(modelId: string): Promise<void>;
+
+  /**
    * Fetch and verify the weights for a model.
    *
    * The one place the bundled tier touches the network, and it is an explicit act by the

@@ -97,7 +97,7 @@ import {
   OpenAICompatibleEmbeddingModel, looksLikeEmbeddingModel, type EmbeddingModel,
 } from './models/embeddings.js';
 import {
-  BUNDLED_MODELS, BundledChatModel, bundledModel,
+  BUNDLED_MODELS, BundledChatModel, bundledModel, recommendBundledModel,
   type BundledModelSpec,
 } from './models/bundled.js';
 import type { LocalModelStatus } from './ports/llm.js';
@@ -189,6 +189,8 @@ export const apiKeySecretName = (provider: string): string => `model.apiKey.${pr
 export interface BundledModelOffer {
   readonly modelId: string;
   readonly spec: BundledModelSpec;
+  /** The size this machine should be offered first. Exactly one is true. */
+  readonly recommended: boolean;
   readonly ready: boolean;
   readonly bytesOnDisk: number;
   readonly unavailableReason: string | null;
@@ -918,16 +920,49 @@ export class Datera {
     }
 
     const byId = new Map(statuses.map((s) => [s.modelId, s]));
+    const recommended = (await this.recommendedBundledModel())?.id ?? null;
+
     return BUNDLED_MODELS.map((spec) => {
       const status = byId.get(spec.id);
       return {
         modelId: spec.id,
         spec,
+        recommended: spec.id === recommended,
         ready: status?.ready ?? false,
         bytesOnDisk: status?.bytesOnDisk ?? 0,
         unavailableReason: status?.unavailableReason ?? null,
       };
     });
+  }
+
+  /**
+   * Which bundled model this machine should be offered.
+   *
+   * Null when no runtime is present. The policy is a pure function of total memory; the
+   * host only reports the number.
+   */
+  async recommendedBundledModel(): Promise<BundledModelSpec | null> {
+    const llm = this.ports.llm;
+    if (llm === undefined) return null;
+    try {
+      return recommendBundledModel(await llm.totalMemoryBytes());
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Load the selected bundled model ahead of the first question.
+   *
+   * Fire-and-forget by design: the caller should not wait, and a failure must not surface
+   * as an error. The only consequence of it not working is a slower first answer.
+   */
+  async warmBundledModel(): Promise<void> {
+    const llm = this.ports.llm;
+    if (llm === undefined) return;
+    const descriptor = await this.selectedChatModelDescriptor();
+    if (descriptor === null || descriptor.tier !== 'bundled') return;
+    await llm.warm(descriptor.id).catch(() => undefined);
   }
 
   /** Fetch and verify a bundled model's weights (§9, D-08: fetched on first run). */
