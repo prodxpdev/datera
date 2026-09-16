@@ -211,6 +211,12 @@ function registerHandlers(): void {
   handle(IPC.listTables, async (id: string) => core().listTables(id));
 
   handle(IPC.pickDirectory, async () => {
+    // A native dialog cannot be driven by a test, which is why the export flow had no
+    // end-to-end coverage at all — and why a bug that made cancelling look identical to
+    // failing survived in it. Headless runs answer with a fixed directory instead.
+    const scripted = process.env['DATERA_TEST_DIRECTORY'];
+    if (headless && scripted !== undefined) return scripted === '' ? null : scripted;
+
     if (window === null) return null;
     const result = await dialog.showOpenDialog(window, {
       title: 'Choose a folder',
