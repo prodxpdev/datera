@@ -180,6 +180,28 @@ describe('Ask and the transparency drawer', () => {
     expect(touched).toMatch(/examined|matched|read one table/i);
   });
 
+  it('puts the result above its explanation and the schema map', async () => {
+    // The result is what Run was pressed for. It used to render after the schema map and
+    // the what-it-touched panel, which pushed the rows themselves below the fold — the
+    // explanations arrived before the thing they explain.
+    const order = await page.evaluate(() => {
+      const y = (selector: string): number => {
+        const el = document.querySelector(selector);
+        return el === null ? Number.POSITIVE_INFINITY : el.getBoundingClientRect().top + window.scrollY;
+      };
+      return {
+        editor: y('.sqled'),
+        result: y('.sqlres'),
+        touched: y('[data-touched]'),
+        map: y('.mapbox'),
+      };
+    });
+
+    expect(order.editor).toBeLessThan(order.result);
+    expect(order.result).toBeLessThan(order.touched);
+    expect(order.touched).toBeLessThan(order.map);
+  });
+
   it('states which model answers questions, and what that costs, where the work happens', async () => {
     const banner = await page.textContent('.banner');
     expect(banner).toContain('llama3.1:8b');

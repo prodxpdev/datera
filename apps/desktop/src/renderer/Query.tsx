@@ -305,27 +305,6 @@ export function Query({
         <div className="sqlfoot">⌘↵ runs · ⌃Space for the full list. Completions come from your schema, not a model.</div>
       </div>
 
-      {showMap && graph !== null && (
-        <div className="mapbox">
-          <div className="maptitle">
-            {datasetName} — {graph.tables.length} table(s),{' '}
-            {graph.relationships.length} confirmed relationship(s).
-            {active.length > 0 && <> Lit: what your query names right now.</>}
-          </div>
-          <SchemaMap
-            graph={graph}
-            active={active}
-            onPick={(table, column) => {
-              const element = editor.current;
-              if (element === null) return;
-              const at = element.selectionStart;
-              const insert = `${table}.${column}`;
-              setSql(`${sql.slice(0, at)}${insert}${sql.slice(at)}`);
-            }}
-          />
-        </div>
-      )}
-
       {error !== null && (
         <div className="err" role="alert">
           <code>{error.code}</code> — {error.message}
@@ -383,8 +362,6 @@ export function Query({
         </div>
       )}
 
-      {touched !== null && touched.shape !== 'none' && <Touched summary={touched} />}
-
       {result !== null && (
         <div className="sqlres">
           <ResultTable columns={result.columns.map((c) => c.name)} rows={result.rows} />
@@ -392,6 +369,33 @@ export function Query({
             ● {result.rows.length} rows · {result.durationMs.toFixed(0)}ms · read-only ·{' '}
             {result.statementKinds.join(', ')}
           </div>
+        </div>
+      )}
+
+      {/* The result comes straight after the editor: it is what Run was pressed for.
+          The explanation of what it touched sits under it, annotating a number already
+          on screen, and the schema map — a reference, not an answer — goes last. All
+          three used to precede the result, which pushed it below the fold. */}
+      {touched !== null && touched.shape !== 'none' && <Touched summary={touched} />}
+
+      {showMap && graph !== null && (
+        <div className="mapbox">
+          <div className="maptitle">
+            {datasetName} — {graph.tables.length} table(s),{' '}
+            {graph.relationships.length} confirmed relationship(s).
+            {active.length > 0 && <> Lit: what your query names right now.</>}
+          </div>
+          <SchemaMap
+            graph={graph}
+            active={active}
+            onPick={(table, column) => {
+              const element = editor.current;
+              if (element === null) return;
+              const at = element.selectionStart;
+              const insert = `${table}.${column}`;
+              setSql(`${sql.slice(0, at)}${insert}${sql.slice(at)}`);
+            }}
+          />
         </div>
       )}
 
