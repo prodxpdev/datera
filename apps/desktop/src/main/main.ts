@@ -258,6 +258,8 @@ function registerHandlers(): void {
   });
 
   handle(IPC.listWorkbookSheets, async (path: string) => core().listWorkbookSheets(path));
+  handle(IPC.proposeSchema, async (text: string) => core().proposeSchema(text));
+  handle(IPC.applySchema, async (datasetId: string, proposal: never) => core().applySchema(datasetId, proposal));
 }
 
 /**

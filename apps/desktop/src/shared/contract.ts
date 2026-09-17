@@ -3,6 +3,7 @@ import type {
   CreateOperationInput,
   OperationResult,
   ReachableDataset,
+  SchemaProposal,
   RemoteQueryResult,
   SchemaGraph,
   AddSourceRequest,
@@ -66,6 +67,8 @@ export interface DateraApi {
   /** Opens the OS file picker. Host-provided: the core has no idea what a dialog is. */
   pickFiles(): Promise<readonly string[]>;
   listWorkbookSheets(path: string): Promise<readonly string[]>;
+  proposeSchema(text: string): Promise<SchemaProposal>;
+  applySchema(datasetId: string, proposal: SchemaProposal): Promise<{ tables: readonly string[]; relationships: number }>;
 
   // ---- Phase 2 -----------------------------------------------------------
   ask(datasetId: string, question: string, options?: { topK?: number }): Promise<AskResult>;
@@ -175,6 +178,8 @@ export const IPC = {
   query: 'datera:query',
   pickFiles: 'datera:pickFiles',
   listWorkbookSheets: 'datera:listWorkbookSheets',
+  proposeSchema: 'datera:proposeSchema',
+  applySchema: 'datera:applySchema',
   ask: 'datera:ask',
   listModels: 'datera:listModels',
   downloadBundledModel: 'datera:downloadBundledModel',

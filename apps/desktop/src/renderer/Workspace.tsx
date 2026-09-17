@@ -19,6 +19,7 @@ import { Settings } from './Settings.js';
 import { Mark } from './Brand.js';
 import { FirstRun } from './FirstRun.js';
 import { SheetPicker } from './SheetPicker.js';
+import { Author } from './Author.js';
 
 /**
  * The application shell.
@@ -44,7 +45,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 type NavId = 'data' | 'query' | 'meaning' | 'learn' | 'activity';
-type DataTab = 'sources' | 'shape' | 'access';
+type DataTab = 'sources' | 'author' | 'shape' | 'access';
 
 interface NavItem {
   readonly id: NavId;
@@ -444,6 +445,15 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
               >
                 Sources
               </button>
+              {/* §3a: two entry paths, both first-class. Sitting beside Sources rather
+                  than somewhere else is the point — it is a way data arrives. */}
+              <button
+                data-data="author"
+                className={dataTab === 'author' ? 'on' : ''}
+                onClick={() => setDataTab('author')}
+              >
+                Define a schema
+              </button>
               <button
                 data-data="shape"
                 className={dataTab === 'shape' ? 'on' : ''}
@@ -462,6 +472,15 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
                 Write access
               </button>
             </div>
+          )}
+
+          {nav === 'data' && dataTab === 'author' && (
+            <Author
+              api={api}
+              datasets={loaded.datasets}
+              datasetId={activeId}
+              onCreated={() => void refresh()}
+            />
           )}
 
           {nav === 'data' && dataTab === 'access' && (

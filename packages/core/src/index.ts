@@ -131,6 +131,8 @@ export { completionsAt, referencedTables, starterSql } from './query/schema-grap
 export { suggestQuestions } from './query/suggest.js';
 export { timeoutForModel, warmupRequestFor } from './models/latency.js';
 export { sheetNamesFrom } from './sources/workbook.js';
+export { proposeSchemaFrom } from './datasets/schema-draft.js';
+export type { SchemaProposal, SchemaRelationshipDraft } from './datasets/schema-draft.js';
 export {
   ACTIVITY_DATASET_ID, ACTIVITY_DATASET_NAME, ACTIVITY_DATASET_SCHEMA,
 } from './datasets/types.js';

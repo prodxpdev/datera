@@ -28,7 +28,7 @@ type Bridge = Record<string, (...args: unknown[]) => Promise<Envelope>>;
 
 const METHODS = [
   'engineInfo', 'listDatasets', 'listSources', 'addSource', 'removeSource',
-  'getSchema', 'preview', 'query', 'pickFiles', 'listWorkbookSheets',
+  'getSchema', 'preview', 'query', 'pickFiles', 'listWorkbookSheets', 'proposeSchema', 'applySchema',
   'ask', 'listModels', 'downloadBundledModel', 'removeBundledModel', 'warmChatModel', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
   'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmColumns', 'confirmEntity', 'schemaGraph',
   'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',

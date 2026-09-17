@@ -665,3 +665,9 @@
 .sheetrow:hover { background: var(--card); }
 .sheetname { font-family: var(--mono); font-size: 12.5px; }
 .sheetnote { font-size: 10.5px; color: var(--ink3); }
+
+/* Author from intent (§3a). */
+.author textarea { width: 100%; min-height: 220px; border: 1px solid var(--line2); border-radius: 9px; padding: 12px 14px; font-family: var(--mono); font-size: 12.5px; resize: vertical; margin: 10px 0; }
+.author .pickrow { flex-wrap: wrap; }
+.proposalbox { border: 1px solid var(--indigo-line); border-radius: 12px; padding: 14px 16px; margin-top: 14px; background: var(--card); min-width: 0; }
+.proposalbox .changetable { margin-top: 8px; }

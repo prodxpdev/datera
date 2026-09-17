@@ -112,6 +112,7 @@ import {
   type AuthoredOperation, type CreateOperationInput,
 } from './serve/operations.js';
 import { sheetNamesFrom } from './sources/workbook.js';
+import { proposeSchemaFrom, type SchemaProposal } from './datasets/schema-draft.js';
 import { draftDictionary } from './dictionary/draft.js';
 import type { GraphTable, SchemaGraph } from './query/schema-graph.js';
 import {
@@ -2972,6 +2973,61 @@ export class Datera {
       columns: table.columns.length,
     });
     return this.describeTable(datasetId, table.name);
+  }
+
+  /**
+   * Read a pasted schema into a proposal (§3a).
+   *
+   * Nothing is created. §1.3's propose-then-confirm applies to structure as much as to
+   * meaning — and a schema someone pasted from an assistant is exactly the kind of thing
+   * that deserves a look before it becomes real.
+   */
+  async proposeSchema(text: string): Promise<SchemaProposal> {
+    return proposeSchemaFrom(this.engine, text, () => this.makeId());
+  }
+
+  /**
+   * Create a proposed schema in a dataset.
+   *
+   * Structural authoring, not the §6 write path: declaring that a customers table exists
+   * is not the same act as changing 1,203 rows in one, and §3a is explicit that letting
+   * the confirm-preview gate cover both leaves it guarding schema edits instead of the
+   * writes it was built for.
+   */
+  async applySchema(
+    datasetId: string,
+    proposal: SchemaProposal,
+  ): Promise<{ tables: readonly string[]; relationships: number }> {
+    const dataset = await this.getDataset(datasetId);
+
+    // Checked before anything is created, so a paste that collides halfway does not leave
+    // half a schema behind.
+    const existing = new Set(await this.listTables(datasetId));
+    const clashes = proposal.tables.filter((t) => existing.has(t.name)).map((t) => t.name);
+    if (clashes.length > 0) {
+      throw new DateraError(
+        'DUPLICATE_NAME',
+        `${clashes.join(', ')} already exist${clashes.length === 1 ? 's' : ''} in "${dataset.name}". ` +
+          'Rename in the paste, or apply into a different dataset.',
+        { clashes, datasetId },
+      );
+    }
+
+    for (const table of proposal.tables) {
+      await this.defineTable(datasetId, table);
+    }
+    for (const link of proposal.relationships) {
+      await this.defineRelationship(datasetId, link);
+    }
+
+    this.ports.logger.log('info', 'Schema authored', {
+      datasetId, tables: proposal.tables.length, relationships: proposal.relationships.length,
+    });
+
+    return {
+      tables: proposal.tables.map((t) => t.name),
+      relationships: proposal.relationships.length,
+    };
   }
 
   /** Declare a relationship between two tables in one dataset. */
