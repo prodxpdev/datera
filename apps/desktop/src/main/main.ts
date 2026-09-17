@@ -81,7 +81,12 @@ async function openCore(): Promise<Datera> {
         seedDirectory: app.isPackaged ? join(process.resourcesPath, 'models') : join(appRoot, 'models'),
       }),
     },
-    extensionDirectory: resolveExtensionDirectory(app.isPackaged ? undefined : appRoot),
+    // Packaged: the staged extensions ride along in Contents/Resources. Unpackaged: found
+    // by walking up from the app root. Getting this wrong in a packaged build is silent —
+    // xlsx and SQLite simply stop working — so it is asserted by the packaged smoke test.
+    extensionDirectory: app.isPackaged
+      ? join(process.resourcesPath, 'duckdb-extensions')
+      : resolveExtensionDirectory(appRoot),
     appVersion: app.getVersion(),
   });
 }

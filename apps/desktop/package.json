@@ -2,7 +2,7 @@
   "name": "@datera/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "The Datera desktop client — a thin Electron host over @datera/core.",
+  "description": "The Datera desktop client \u2014 a thin Electron host over @datera/core.",
   "main": "dist/main/main.js",
   "type": "module",
   "scripts": {
@@ -10,11 +10,14 @@
     "dev": "node ../../scripts/brand-dev-electron.mjs && node build.mjs && electron .",
     "start": "node ../../scripts/brand-dev-electron.mjs && electron .",
     "package": "node build.mjs && electron-builder --mac dir --arm64",
-    "brand": "node ../../scripts/brand-dev-electron.mjs"
+    "brand": "node ../../scripts/brand-dev-electron.mjs",
+    "package:offline": "node ../../scripts/build-offline.mjs"
   },
   "dependencies": {
     "@datera/core": "workspace:*",
-    "@datera/node-runtime": "workspace:*"
+    "@datera/node-runtime": "workspace:*",
+    "@duckdb/node-api": "1.5.5-r.5",
+    "node-llama-cpp": "^3.21.1"
   },
   "devDependencies": {
     "@datera/cli": "workspace:*",
@@ -35,7 +38,8 @@
     "productName": "Datera",
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
     ],
     "directories": {
       "output": "release",
@@ -71,7 +75,27 @@
         "AppImage",
         "deb"
       ],
-      "category": "Development"
-    }
+      "category": "Development",
+      "executableName": "datera"
+    },
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/@duckdb/**",
+      "**/node_modules/node-llama-cpp/**",
+      "**/node_modules/@node-llama-cpp/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../../vendor/duckdb-extensions",
+        "to": "duckdb-extensions"
+      }
+    ]
+  },
+  "optionalDependencies": {
+    "@duckdb/node-bindings-darwin-arm64": "1.5.5-r.5",
+    "@duckdb/node-bindings-darwin-x64": "1.5.5-r.5",
+    "@duckdb/node-bindings-linux-x64": "1.5.5-r.5",
+    "@duckdb/node-bindings-linux-arm64": "1.5.5-r.5",
+    "@duckdb/node-bindings-win32-x64": "1.5.5-r.5"
   }
 }

@@ -47,6 +47,12 @@ importers:
       '@datera/node-runtime':
         specifier: workspace:*
         version: link:../../packages/node-runtime
+      '@duckdb/node-api':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
+      node-llama-cpp:
+        specifier: ^3.21.1
+        version: 3.21.1(typescript@5.9.3)
     devDependencies:
       '@datera/cli':
         specifier: workspace:*
@@ -81,6 +87,22 @@ importers:
       vite:
         specifier: ^5.4.11
         version: 5.4.21(@types/node@22.20.2)
+    optionalDependencies:
+      '@duckdb/node-bindings-darwin-arm64':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
+      '@duckdb/node-bindings-darwin-x64':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
+      '@duckdb/node-bindings-linux-arm64':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
+      '@duckdb/node-bindings-linux-x64':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
+      '@duckdb/node-bindings-win32-x64':
+        specifier: 1.5.5-r.5
+        version: 1.5.5-r.5
 
   packages/cli:
     dependencies:

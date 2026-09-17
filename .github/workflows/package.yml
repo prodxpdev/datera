@@ -1,0 +1,88 @@
+name: Package
+
+# Packaging had never been run for Windows or Linux — the targets were configured and
+# nothing had ever produced one. That is how a build ships with the DuckDB native binding
+# missing, which is exactly what it did: the JavaScript travelled and the .node file did
+# not, so a packaged Datera could not open a workspace at all.
+#
+# Each platform builds on its own runner. Cross-building an Electron app with native
+# addons from one OS to another is a way to produce artifacts nobody has run.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  DATERA_EXTENSION_DIR: ${{ github.workspace }}/vendor/duckdb-extensions
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac dir --arm64
+            smoke: true
+          - os: ubuntu-latest
+            target: --linux dir --x64
+            smoke: false
+          - os: windows-latest
+            target: --win dir --x64
+            smoke: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @datera/desktop build
+
+      - name: Stage DuckDB extensions
+        run: node scripts/stage-extensions.mjs
+
+      - name: Package
+        working-directory: apps/desktop
+        run: npx electron-builder ${{ matrix.target }}
+
+      # The assertion that would have caught the missing binding, and the only one that
+      # actually proves anything: the packaged app starts and reads a file.
+      - name: Smoke-test the packaged app
+        if: matrix.smoke
+        env:
+          DATERA_PACKAGED: '1'
+        run: pnpm vitest run apps/desktop/test/packaged-smoke.test.ts
+
+      # Cheap and platform-independent: a build that shipped no native binding is broken
+      # whether or not this runner can launch a GUI.
+      - name: Assert the native binding shipped
+        shell: bash
+        run: |
+          found=$(find apps/desktop/release -name '*.node' | head -5)
+          if [ -z "$found" ]; then
+            echo "No .node file in the packaged app — the native binding did not ship."
+            exit 1
+          fi
+          echo "$found"
+
+      - name: Assert the DuckDB extensions shipped
+        shell: bash
+        run: |
+          if ! find apps/desktop/release -path '*duckdb-extensions*' -name '*.duckdb_extension' | head -1 | grep -q .; then
+            echo "No staged DuckDB extensions in the packaged app — xlsx and SQLite would fail."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: datera-${{ matrix.os }}
+          path: apps/desktop/release
+          retention-days: 7
