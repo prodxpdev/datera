@@ -55,8 +55,19 @@
             "arm64",
             "x64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
-      ]
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "icon": "build/icon.ico",
@@ -72,8 +83,7 @@
     "linux": {
       "icon": "build/icon.png",
       "target": [
-        "AppImage",
-        "deb"
+        "AppImage"
       ],
       "category": "Development",
       "executableName": "datera"
@@ -89,7 +99,16 @@
         "from": "../../vendor/duckdb-extensions",
         "to": "duckdb-extensions"
       }
-    ]
+    ],
+    "dmg": {
+      "title": "Datera ${version}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "artifactName": "Datera-${version}-${os}-${arch}.${ext}"
   },
   "optionalDependencies": {
     "@duckdb/node-bindings-darwin-arm64": "1.5.5-r.5",

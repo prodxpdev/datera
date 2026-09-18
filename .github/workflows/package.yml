@@ -1,12 +1,16 @@
 name: Package
 
-# Packaging had never been run for Windows or Linux — the targets were configured and
-# nothing had ever produced one. That is how a build ships with the DuckDB native binding
-# missing, which is exactly what it did: the JavaScript travelled and the .node file did
-# not, so a packaged Datera could not open a workspace at all.
+# Installers for every platform, each built on its own hardware.
 #
-# Each platform builds on its own runner. Cross-building an Electron app with native
-# addons from one OS to another is a way to produce artifacts nobody has run.
+# Native addons are why that is not optional. DuckDB and llama.cpp ship a separate
+# binding per platform and architecture, and a package manager installs only the one
+# matching the machine it runs on. An x64 Mac build made on an arm64 runner therefore
+# ships an arm64 binding inside an x64 app — which starts, and cannot open a workspace.
+# That failure mode already happened once here (the binding missing entirely), so every
+# job below asserts the binding is present and built for the right architecture.
+#
+# Signing and notarization switch on by themselves when the secrets exist, and the build
+# is unsigned-but-working until then.
 
 on:
   push:
@@ -18,25 +22,39 @@ env:
 
 jobs:
   package:
-    name: package (${{ matrix.os }})
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            target: --mac dir --arm64
+          - name: macOS (Apple silicon)
+            os: macos-latest
+            target: --mac --arm64
+            unpacked: mac-arm64
+            arch: arm64
             smoke: true
-          - os: ubuntu-latest
-            target: --linux dir --x64
+          - name: macOS (Intel)
+            os: macos-13
+            target: --mac --x64
+            unpacked: mac
+            arch: x86_64
             smoke: false
-          - os: windows-latest
-            target: --win dir --x64
+          - name: Windows
+            os: windows-latest
+            target: --win --x64
+            unpacked: win-unpacked
+            arch: x86-64
+            smoke: false
+          - name: Linux
+            os: ubuntu-latest
+            target: --linux --x64
+            unpacked: linux-unpacked
+            arch: x86-64
             smoke: false
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -45,44 +63,64 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @datera/desktop build
+      - run: node scripts/stage-extensions.mjs
 
-      - name: Stage DuckDB extensions
-        run: node scripts/stage-extensions.mjs
-
-      - name: Package
+      - name: Build installers
         working-directory: apps/desktop
-        run: npx electron-builder ${{ matrix.target }}
+        env:
+          # macOS signing. Absent secrets mean an unsigned build, not a failed one.
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          # macOS notarization via an App Store Connect API key — preferred over an
+          # Apple ID password, which expires and breaks CI without warning.
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # Windows signing, when a certificate exists.
+          WIN_CSC_LINK: ${{ secrets.WIN_CERT_P12_BASE64 }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CERT_P12_BASE64 != '' }}
+        run: npx electron-builder ${{ matrix.target }} --publish never
 
-      # The assertion that would have caught the missing binding, and the only one that
-      # actually proves anything: the packaged app starts and reads a file.
+      - name: Assert the native binding shipped, for the right architecture
+        shell: bash
+        run: |
+          binding=$(find "apps/desktop/release/${{ matrix.unpacked }}" -name 'duckdb.node' | head -1)
+          if [ -z "$binding" ]; then
+            echo "::error::No DuckDB binding in the packaged app — it cannot open a workspace."
+            exit 1
+          fi
+          echo "binding: $binding"
+          description=$(file "$binding")
+          echo "$description"
+          if ! echo "$description" | grep -qi "${{ matrix.arch }}"; then
+            echo "::error::The DuckDB binding is not built for ${{ matrix.arch }}."
+            exit 1
+          fi
+
+      - name: Assert the DuckDB extensions shipped
+        shell: bash
+        run: |
+          if ! find apps/desktop/release -path '*duckdb-extensions*' -name '*.duckdb_extension' | grep -q .; then
+            echo "::error::No staged DuckDB extensions — xlsx and SQLite would fail."
+            exit 1
+          fi
+
+      # The test that proves the thing runs. Apple silicon only for now: GUI apps need a
+      # display, and the hosted macOS runners are the ones that have one without setup.
       - name: Smoke-test the packaged app
         if: matrix.smoke
         env:
           DATERA_PACKAGED: '1'
         run: pnpm vitest run apps/desktop/test/packaged-smoke.test.ts
 
-      # Cheap and platform-independent: a build that shipped no native binding is broken
-      # whether or not this runner can launch a GUI.
-      - name: Assert the native binding shipped
-        shell: bash
-        run: |
-          found=$(find apps/desktop/release -name '*.node' | head -5)
-          if [ -z "$found" ]; then
-            echo "No .node file in the packaged app — the native binding did not ship."
-            exit 1
-          fi
-          echo "$found"
-
-      - name: Assert the DuckDB extensions shipped
-        shell: bash
-        run: |
-          if ! find apps/desktop/release -path '*duckdb-extensions*' -name '*.duckdb_extension' | head -1 | grep -q .; then
-            echo "No staged DuckDB extensions in the packaged app — xlsx and SQLite would fail."
-            exit 1
-          fi
-
       - uses: actions/upload-artifact@v4
         with:
-          name: datera-${{ matrix.os }}
-          path: apps/desktop/release
-          retention-days: 7
+          name: datera-${{ matrix.unpacked }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
