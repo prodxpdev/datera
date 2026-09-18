@@ -4,7 +4,7 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { freemem, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import {
   ALL_BUNDLED_MODELS,
   type BundledModelSpec,
@@ -131,27 +131,36 @@ export class NodeLocalLlm implements LocalLlmPort {
     let received = 0;
     let lastReported = 0;
 
-    const body = Readable.fromWeb(response.body as never);
-    body.on('data', (chunk: Buffer) => {
-      received += chunk.length;
-      // Reported about every 8 MB: a progress event per chunk would spend more time
-      // crossing the IPC boundary than downloading.
-      if (received - lastReported >= 8_000_000 || received === total) {
-        lastReported = received;
-        onProgress?.({ modelId, receivedBytes: received, totalBytes: total });
-      }
+    // Counted *inside* the pipeline, as the bytes pass through to the file — not by a
+    // 'data' listener beside it. A side listener puts the stream into flowing mode on its
+    // own, so under some runtimes' timing a chunk can be counted and never written. The
+    // length check then compared the counter, passed, and the hash failed with a message
+    // saying the download was complete: it was not, and the check that existed to say so
+    // was measuring the wrong thing.
+    const counter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        received += chunk.length;
+        // About every 8 MB: a progress event per chunk would spend more time crossing the
+        // IPC boundary than downloading.
+        if (received - lastReported >= 8_000_000 || received === total) {
+          lastReported = received;
+          onProgress?.({ modelId, receivedBytes: received, totalBytes: total });
+        }
+        callback(null, chunk);
+      },
     });
 
-    await pipeline(body, createWriteStream(partial));
+    await pipeline(Readable.fromWeb(response.body as never), counter, createWriteStream(partial));
 
-    // Length before hash, because the two failures need different advice and a hash
-    // mismatch cannot tell them apart. A dropped connection produces a short file whose
-    // hash is simply wrong, and reporting that as "this is not the file we expected"
-    // blames the publisher for the user's network — which is both wrong and unactionable.
-    if (received !== total) {
+    // And the size is taken from the file itself. What matters is what is on disk.
+    const written = (await stat(partial)).size;
+
+    // Against the catalogue's size, not the server's Content-Length: the catalogue is what
+    // was published and checksummed, and a header is only a claim about this response.
+    if (written !== spec.sizeBytes) {
       await rm(partial, { force: true });
       throw new Error(
-        `Downloading ${spec.label} ended early — ${gib(received)} GB of ${gib(total)} GB. ` +
+        `Downloading ${spec.label} ended early — ${gib(written)} GB of ${gib(spec.sizeBytes)} GB. ` +
           'That is usually a dropped connection rather than a problem with the file. Try again.',
       );
     }

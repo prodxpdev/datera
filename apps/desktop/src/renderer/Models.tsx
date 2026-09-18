@@ -166,7 +166,9 @@ export function Models({
             return (
               <div
                 key={offer.modelId}
-                className={`opt ${selected ? 'on' : ''} ${offer.ready ? '' : 'off'}`}
+                className={`opt ${selected ? 'on' : ''} ${
+                  offer.unavailableReason !== null ? 'off' : offer.ready ? '' : 'pending'
+                }`}
                 data-bundled={offer.modelId}
                 onClick={() => {
                   if (offer.ready && offer.unavailableReason === null) {
@@ -347,7 +349,7 @@ export function Models({
               <div
                 key={`embed-${model.id}`}
                 className={`opt ${catalogue.selectedEmbedding?.id === model.id ? 'on' : ''} ${
-                  needsDownload ? 'off' : ''
+                  needsDownload ? 'pending' : ''
                 }`}
                 data-embedder={model.id}
                 onClick={() => {

@@ -671,3 +671,10 @@
 .author .pickrow { flex-wrap: wrap; }
 .proposalbox { border: 1px solid var(--indigo-line); border-radius: 12px; padding: 14px 16px; margin-top: 14px; background: var(--card); min-width: 0; }
 .proposalbox .changetable { margin-top: 8px; }
+
+/* Not downloaded yet: full strength, because the row has an obvious next step. Dimming it
+   said "disabled" while its Download button said "click me", and the two contradicted
+   each other. Only the radio is muted — it genuinely cannot be selected until the
+   weights are here. .opt.off stays for the case that really is unavailable. */
+.opt.pending { cursor: default; }
+.opt.pending .radio { opacity: .35; }
