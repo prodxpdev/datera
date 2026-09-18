@@ -48,6 +48,19 @@ const APP_NAME = 'Datera';
  */
 app.setName(APP_NAME);
 
+/**
+ * A test run gets its own profile, beside its own workspace.
+ *
+ * Every Electron test isolated its *workspace* with DATERA_WORKSPACE and none isolated the
+ * *profile* — so each one wrote Chromium caches, and a models directory, into the real
+ * ~/Library/Application Support/Datera. Found when a clean reset was undone by the very
+ * smoke test run to check the reinstall. Set here, before 'ready', because that is the
+ * only point at which Electron honours it.
+ */
+if (process.env['DATERA_HEADLESS'] === '1' && process.env['DATERA_WORKSPACE'] !== undefined) {
+  app.setPath('userData', join(resolve(process.env['DATERA_WORKSPACE']), '.profile'));
+}
+
 let datera: Datera | null = null;
 let window: BrowserWindow | null = null;
 
