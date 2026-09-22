@@ -89,7 +89,8 @@ export function Operations({
       {error !== null && <div className="err" role="alert">{error}</div>}
 
       <p className="tierdesc">
-        A named, typed statement this workspace offers — served as its own MCP tool and as{' '}
+        <b>Things you decide an agent may do, beyond running arbitrary SQL.</b> A named,
+        typed statement this workspace offers — served as its own MCP tool and as{' '}
         <span className="mono">POST /api/operations</span>. Write <span className="mono">$name</span>{' '}
         in the SQL and it becomes an argument.
       </p>
