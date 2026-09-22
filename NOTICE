@@ -1,0 +1,11 @@
+Datera
+Copyright 2026 ProdXP, LLC
+
+This product is licensed under the Apache License, Version 2.0 (see the
+LICENSE file in this repository).
+
+"Datera" and the Datera logo are trademarks of ProdXP, LLC. The
+Apache License, Version 2.0 does not grant permission to use these marks.
+
+This product includes third-party software:
+  - DuckDB — MIT License — https://duckdb.org

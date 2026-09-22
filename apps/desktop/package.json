@@ -1,0 +1,125 @@
+{
+  "name": "@datera/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Datera desktop client \u2014 a thin Electron host over @datera/core.",
+  "main": "dist/main/main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node ../../scripts/brand-dev-electron.mjs && node build.mjs && electron .",
+    "start": "node ../../scripts/brand-dev-electron.mjs && electron .",
+    "package": "node build.mjs && electron-builder --mac dir --arm64",
+    "brand": "node ../../scripts/brand-dev-electron.mjs",
+    "package:offline": "node ../../scripts/build-offline.mjs"
+  },
+  "dependencies": {
+    "@datera/core": "workspace:*",
+    "@datera/node-runtime": "workspace:*",
+    "@duckdb/node-api": "1.5.5-r.5",
+    "node-llama-cpp": "^3.21.1"
+  },
+  "devDependencies": {
+    "@datera/cli": "workspace:*",
+    "@datera/testkit": "workspace:*",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^26.15.3",
+    "playwright": "^1.49.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.11"
+  },
+  "productName": "Datera",
+  "build": {
+    "appId": "app.datera.desktop",
+    "productName": "Datera",
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "executableName": "datera"
+    },
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/@duckdb/**",
+      "**/node_modules/node-llama-cpp/**",
+      "**/node_modules/@node-llama-cpp/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../../vendor/duckdb-extensions",
+        "to": "duckdb-extensions"
+      }
+    ],
+    "dmg": {
+      "title": "Datera ${version}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "artifactName": "Datera-${version}-${os}-${arch}.${ext}"
+  },
+  "optionalDependencies": {
+    "@duckdb/node-bindings-darwin-arm64": "1.5.5-r.5",
+    "@duckdb/node-bindings-darwin-x64": "1.5.5-r.5",
+    "@duckdb/node-bindings-linux-x64": "1.5.5-r.5",
+    "@duckdb/node-bindings-linux-arm64": "1.5.5-r.5",
+    "@duckdb/node-bindings-win32-x64": "1.5.5-r.5",
+    "@node-llama-cpp/mac-arm64-metal": "3.21.1",
+    "@node-llama-cpp/mac-x64": "3.21.1",
+    "@node-llama-cpp/linux-x64": "3.21.1",
+    "@node-llama-cpp/linux-arm64": "3.21.1",
+    "@node-llama-cpp/win-x64": "3.21.1"
+  }
+}

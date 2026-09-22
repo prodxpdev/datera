@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 352 100">
+<defs><style>@import url("https://fonts.googleapis.com/css2?family=Inter:wght@600;700&amp;display=swap");.wm{font-family:Inter,system-ui,sans-serif;font-weight:650;letter-spacing:-1.5px;}</style></defs>
+<rect x="2" y="2" width="96" height="96" rx="26" fill="#12161c"/>
+<rect x="24" y="30" width="52" height="11" rx="5.5" fill="#fff" opacity=".95"/>
+<rect x="24" y="47" width="40" height="11" rx="5.5" fill="#fff" opacity=".6"/>
+<rect x="24" y="64" width="28" height="11" rx="5.5" fill="#fff" opacity=".38"/>
+<text class="wm" x="120" y="71" font-size="66" fill="#12161c">Datera</text>
+</svg>

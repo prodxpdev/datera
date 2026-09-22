@@ -1,0 +1,78 @@
+import type { DateraApi } from '../shared/contract.js';
+
+/**
+ * Turns the preload's envelope-returning bridge into the typed `DateraApi`.
+ *
+ * This runs in the **main world**, which is the whole point: an error constructed here
+ * keeps its `code`, where one thrown across `contextBridge` would have it stripped.
+ */
+export class DateraClientError extends Error {
+  readonly code: string;
+  readonly details: Record<string, unknown>;
+
+  constructor(code: string, message: string, details: Record<string, unknown>) {
+    super(message);
+    this.name = 'DateraError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+interface Envelope {
+  ok: boolean;
+  value?: unknown;
+  error?: { code: string; message: string; details: Record<string, unknown> };
+}
+
+type Bridge = Record<string, (...args: unknown[]) => Promise<Envelope>>;
+
+const METHODS = [
+  'engineInfo', 'listDatasets', 'listSources', 'addSource', 'removeSource',
+  'getSchema', 'preview', 'query', 'pickFiles', 'listWorkbookSheets', 'proposeSchema', 'applySchema',
+  'ask', 'listModels', 'downloadBundledModel', 'removeBundledModel', 'warmChatModel', 'setChatModel', 'setApiKey', 'hasApiKey', 'clearApiKey',
+  'draftDictionary', 'getDictionary', 'confirmColumn', 'confirmColumns', 'confirmEntity', 'schemaGraph',
+  'detectRelationships', 'confirmRelationship', 'listRelationships', 'createDataset',
+  'explainTouched',
+  'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',
+  'listTools', 'callTool', 'createOperation', 'listOperations', 'deleteOperation', 'callOperation', 'connectConfig', 'queryTraceLog', 'getTraceRetention',
+  'setTraceRetention', 'getTracePayloadCapture', 'setTracePayloadCapture', 'pruneTraceLog',
+  'listEnvironments', 'listReachableDatasets', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',
+  'pushDataset', 'remoteQuery',
+  'getLifecycle', 'setLifecycle', 'resetLifecycle',
+  'moveSource', 'renameDataset', 'deleteDataset', 'apiEndpoints',
+  'deriveDataset', 'proposeNormalization', 'applyNormalization', 'proposeEnums',
+  'saveVersion', 'listVersions', 'diffVersions', 'exportDataset', 'importDataset',
+  'pickDirectory',
+  'canWrite', 'grantWrite', 'enableWrites', 'revokeWrite', 'proposeWrite', 'proposeWriteFromQuestion',
+  'confirmWrite', 'undoWrite', 'listWrites', 'listTables',
+] as const;
+
+export function createApi(bridge: Bridge): DateraApi {
+  const api: Record<string, unknown> = {};
+
+  // Not an invoke, so it does not go through the envelope loop: a subscription returns an
+  // unsubscribe function rather than a promise.
+  api['onBundledProgress'] = (listener: (progress: unknown) => void): (() => void) => {
+    const subscribe = (bridge as unknown as {
+      onBundledProgress?: (l: (p: unknown) => void) => () => void;
+    }).onBundledProgress;
+    return subscribe?.(listener) ?? ((): void => undefined);
+  };
+
+  for (const method of METHODS) {
+    api[method] = async (...args: unknown[]): Promise<unknown> => {
+      const envelope = await bridge[method]?.(...args);
+      if (envelope === undefined) {
+        throw new DateraClientError('UNKNOWN', `The bridge has no "${method}" method.`, {});
+      }
+      if (envelope.ok) return envelope.value;
+      throw new DateraClientError(
+        envelope.error?.code ?? 'UNKNOWN',
+        envelope.error?.message ?? 'Unknown error',
+        envelope.error?.details ?? {},
+      );
+    };
+  }
+
+  return api as unknown as DateraApi;
+}

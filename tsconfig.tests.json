@@ -1,0 +1,23 @@
+{
+  // Typechecks the test suites, which the package projects deliberately do not.
+  //
+  // Each package sets rootDir: src and composite: true, so tests cannot simply be added to
+  // their include without breaking the build layout. A separate no-emit project is the
+  // cheap fix — and a needed one: an untypechecked test can pass for the wrong reason.
+  // Twice in one session a stub silently lacked methods a port had gained, and the code
+  // under test swallowed the failure.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // Playwright's page.evaluate callbacks are browser code, compiled here alongside Node
+    // test code. Both libs, because both are genuinely present — one in the test process,
+    // one inside evaluate.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["packages/*/test/**/*.ts", "apps/*/test/**/*.ts"]
+}
