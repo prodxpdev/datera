@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -50,8 +50,10 @@ describe.runIf(process.platform === 'darwin')('development bundle branding', () 
   const bundle = bundlePath();
 
   it('names the dev bundle Datera, so the Dock tile matches the packaged app', () => {
+    // No call to the script here: the harness has already run it. Invoking it mid-suite
+    // is the shared-state mutation that broke the macOS job, and being idempotent only
+    // made that harmless by luck.
     expect(bundle).not.toBeNull();
-    execFileSync('node', [script], { encoding: 'utf8' });
 
     const plist = join(bundle!, 'Contents', 'Info.plist');
     expect(plistValue(plist, 'CFBundleName')).toBe('Datera');
