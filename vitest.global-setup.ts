@@ -51,6 +51,21 @@ export async function setup(): Promise<void> {
     );
   }
 
+  // Brand the development Electron bundle before any suite starts.
+  //
+  // This renames the shared bundle and rewrites the electron package's path.txt, which
+  // every Playwright launch resolves through. Doing it inside a test meant mutating that
+  // path while other suites were launching from it in parallel — fine locally at two
+  // forks, a window-creation timeout on CI. Once here, it happens exactly once, before
+  // anything runs, and the test that covers it only has to assert.
+  //
+  // A no-op off macOS and on a machine where it has already run.
+  try {
+    await run('node', ['scripts/brand-dev-electron.mjs'], { cwd: process.cwd() });
+  } catch {
+    // Branding is cosmetic. A failure here must not stop the suite from running.
+  }
+
   const paths = await generateFixtures();
   process.env.DATERA_FIXTURES = paths.root;
 
