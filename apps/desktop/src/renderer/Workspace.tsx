@@ -637,7 +637,6 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           datasets={loaded.datasets}
           datasetId={activeId}
           onClose={() => setSettingsOpen(false)}
-          onChanged={() => void refresh()}
         />
       )}
     </div>

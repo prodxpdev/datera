@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
-import { freemem, totalmem } from 'node:os';
+import { totalmem } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
+import type * as LlamaCppModule from 'node-llama-cpp';
 import {
   ALL_BUNDLED_MODELS,
   type BundledModelSpec,
@@ -52,7 +53,7 @@ export interface NodeLocalLlmOptions {
   readonly seedDirectory?: string | undefined;
 }
 
-type LlamaModule = typeof import('node-llama-cpp');
+type LlamaModule = typeof LlamaCppModule;
 
 export class NodeLocalLlm implements LocalLlmPort {
   private llama: Awaited<ReturnType<LlamaModule['getLlama']>> | null = null;
@@ -73,7 +74,6 @@ export class NodeLocalLlm implements LocalLlmPort {
   }
 
   async status(): Promise<readonly LocalModelStatus[]> {
-    const free = Math.max(freemem(), 0);
     const total = totalmem();
 
     return Promise.all(
@@ -201,7 +201,6 @@ export class NodeLocalLlm implements LocalLlmPort {
   }
 
   async generate(request: LocalGenerateRequest): Promise<LocalGenerateResult> {
-    const spec = this.spec(request.modelId);
     const llama = await this.getLlama();
     const mod = this.module!;
 

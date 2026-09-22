@@ -33,13 +33,11 @@ export function Settings({
   datasets,
   datasetId,
   onClose,
-  onChanged,
 }: {
   readonly api: DateraApi;
   readonly datasets: readonly Dataset[];
   readonly datasetId: string;
   readonly onClose: () => void;
-  readonly onChanged: () => void;
 }): JSX.Element {
   const [tab, setTab] = useState<Tab>('models');
 
