@@ -41,9 +41,14 @@ if [ -z "$key_id" ]; then
   exit 1
 fi
 
-# The one value that is not already in a file. Read without echo, straight to the pipe.
-read -r -s -p "Password you set when exporting the .p12: " cert_password
-echo
+# Written beside the .p12 by apple-signing.sh. Prompted for only when that file is not
+# there — a .p12 exported by hand from Keychain Access has a password only you know.
+if [ -f "$p12.password" ]; then
+  cert_password=$(cat "$p12.password")
+else
+  read -r -s -p "Password for $p12: " cert_password
+  echo
+fi
 
 # Checked before anything is stored: a wrong password would otherwise surface only as a
 # failed CI run, long after this script reported success.

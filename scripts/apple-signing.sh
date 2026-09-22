@@ -18,6 +18,7 @@ DIR="$HOME/Datera-signing"
 KEY="$DIR/developer-id.key"
 CSR="$DIR/developer-id.csr"
 P12="$DIR/developer-id.p12"
+PW="$DIR/developer-id.p12.password"
 
 case "${1:-}" in
 csr)
@@ -91,9 +92,15 @@ p12)
     exit 1
   fi
 
-  read -r -s -p "Choose a password for the .p12 (you will need it again in a moment): " pw
-  echo
-  [ -n "$pw" ] || { echo "An empty password would be stored in CI as an empty secret." >&2; exit 1; }
+  # Generated, not chosen. This password only wraps the .p12 between here and GitHub —
+  # nobody types it, and CI reads it from a secret. A human-chosen one would be weaker for
+  # no benefit, and prompting made the script unusable anywhere without a terminal.
+  #
+  # It sits beside the key in a directory only you can read. That is not extra exposure:
+  # anyone who can read the password file can already read the private key itself.
+  pw=$(openssl rand -base64 24)
+  printf '%s' "$pw" > "$PW"
+  chmod 600 "$PW"
 
   # Apple's intermediate is included so the chain verifies on a machine that has never
   # seen it — which is every CI runner.
@@ -109,13 +116,23 @@ p12)
     ${intermediate:+-certfile "$intermediate"} \
     -out "$P12" -passout "fd:3" 3<<<"$pw"
 
-  chmod 600 "$P12"
+  chmod 600 "$P12" "$pem"
   unset pw
 
+  # Proves the bundle opens with the password just written, before it is relied on. A .p12
+  # that CI cannot unwrap fails minutes into a build, with an error about signing rather
+  # than about this file.
+  if ! openssl pkcs12 -in "$P12" -passin "file:$PW" -noout 2>/dev/null \
+     && ! openssl pkcs12 -legacy -in "$P12" -passin "file:$PW" -noout 2>/dev/null; then
+    echo "The .p12 was written but will not open with its own password." >&2
+    exit 1
+  fi
+
   echo
-  echo "Built $P12"
+  echo "Built $P12 (verified it opens)"
+  echo "Password stored at $PW — set-signing-secrets.sh reads it from there."
   echo
-  echo "Next: scripts/set-signing-secrets.sh $P12 ~/Downloads/AuthKey_XXXXXXXXXX.p8 <issuer-id>"
+  echo "Next: scripts/set-signing-secrets.sh $P12 <AuthKey_XXXXXXXXXX.p8> <issuer-id>"
   ;;
 
 *)
