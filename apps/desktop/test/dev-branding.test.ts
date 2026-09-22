@@ -44,11 +44,16 @@ describe.runIf(process.platform === 'darwin')('development bundle branding', () 
   // CI runner nothing has, and asserting the bundle is branded before anything branded it
   // tests the runner's history rather than the script. It is idempotent by design, which
   // is what makes calling it here safe.
+  // Resolved *after* the script runs, not while the suite is being collected. The
+  // describe body executes before beforeAll, so capturing the path there pinned it to
+  // Electron.app — the name the script is about to change — and every assertion then
+  // read a file that no longer existed.
+  let bundle: string | null = null;
+
   beforeAll(() => {
     execFileSync('node', [script], { encoding: 'utf8' });
+    bundle = bundlePath();
   });
-
-  const bundle = bundlePath();
 
   it('names the dev bundle Datera, so the Dock tile matches the packaged app', () => {
     expect(bundle).not.toBeNull();
