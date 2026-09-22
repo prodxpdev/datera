@@ -9,3 +9,15 @@ apps/desktop/release/
 coverage/
 vendor/
 docs/*.png
+
+# Signing material and anything shaped like it. None of this should ever be in the repo —
+# the source is public, the identity that signs it is not. Listed defensively rather than
+# relying on remembering: a leaked key means revoking the certificate and reissuing.
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+developer-id.*
+
+# Model weights staged for the offline installer build — gigabytes, fetched on demand.
+apps/desktop/models/
