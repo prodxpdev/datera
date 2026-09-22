@@ -111,7 +111,13 @@ p12)
     rm -f "$intermediate"
   fi
 
+  # 3DES and a SHA-1 MAC, explicitly. OpenSSL 3 defaults to AES-256 with a SHA-256 MAC,
+  # which macOS's `security import` cannot read at all — so the bundle builds, opens
+  # correctly under openssl, and then fails with an opaque import error the first time
+  # anything tries to sign with it. Named algorithms rather than -legacy, which also needs
+  # the legacy provider loaded for RC2.
   openssl pkcs12 -export \
+    -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
     -inkey "$KEY" -in "$pem" \
     ${intermediate:+-certfile "$intermediate"} \
     -out "$P12" -passout "fd:3" 3<<<"$pw"
@@ -122,14 +128,28 @@ p12)
   # Proves the bundle opens with the password just written, before it is relied on. A .p12
   # that CI cannot unwrap fails minutes into a build, with an error about signing rather
   # than about this file.
+  #
+  # And proves macOS itself will import it — openssl opening the file is not the same
+  # question, and was the one that gave a false pass.
   if ! openssl pkcs12 -in "$P12" -passin "file:$PW" -noout 2>/dev/null \
      && ! openssl pkcs12 -legacy -in "$P12" -passin "file:$PW" -noout 2>/dev/null; then
     echo "The .p12 was written but will not open with its own password." >&2
     exit 1
   fi
 
+  # The check that matters: a throwaway keychain, the same call electron-builder makes.
+  probe_keychain="$DIR/.import-probe.keychain"
+  rm -f "$probe_keychain"
+  security create-keychain -p probe "$probe_keychain" >/dev/null 2>&1
+  if ! security import "$P12" -k "$probe_keychain" -P "$(cat "$PW")" -T /usr/bin/codesign >/dev/null 2>&1; then
+    security delete-keychain "$probe_keychain" >/dev/null 2>&1 || true
+    echo "macOS will not import $P12 — signing would fail wherever it is used." >&2
+    exit 1
+  fi
+  security delete-keychain "$probe_keychain" >/dev/null 2>&1 || true
+
   echo
-  echo "Built $P12 (verified it opens)"
+  echo "Built $P12 (verified openssl opens it and macOS imports it)"
   echo "Password stored at $PW — set-signing-secrets.sh reads it from there."
   echo
   echo "Next: scripts/set-signing-secrets.sh $P12 <AuthKey_XXXXXXXXXX.p8> <issuer-id>"
