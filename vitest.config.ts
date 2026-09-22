@@ -7,7 +7,11 @@ export default defineConfig({
     // DuckDB work and a 1M-row fixture are not fast. A short default timeout would make
     // the suite flaky on a cold CI runner, which teaches people to re-run rather than read.
     testTimeout: 120_000,
-    hookTimeout: 120_000,
+    // Longer than the test timeout on purpose. A suite's setup hook launches Electron,
+    // waits for a window, connects a fixture and reloads — four slow things in sequence,
+    // where a test is usually one. 120s was comfortable on a laptop and not on a shared
+    // CI runner, where it failed as a hook timeout that says nothing about the product.
+    hookTimeout: 240_000,
     // Forks, not threads: the DuckDB native addon holds process-global state, and the
     // egress guard patches process-global networking. Neither is safe to share.
     pool: 'forks',
