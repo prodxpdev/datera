@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,7 +68,12 @@ describe('export from the app', () => {
       .poll(async () => (await readdir(exportDir)).some((f) => f.endsWith('.parquet')), { timeout: 60_000 })
       .toBe(true);
 
-    expect(await page.textContent('.shape')).toMatch(/Exported \d+ file/);
+    // Polled, not asserted directly: the files land before React has re-rendered the
+    // status line, so reading it immediately after the files appear is a race that only
+    // shows up on a slower machine.
+    await expect.poll(async () => page.textContent('.shape'), { timeout: 30_000 })
+      .toMatch(/Exported \d+ file/);
+
     const written = await readdir(exportDir);
     expect(written.some((f) => f.endsWith('.parquet'))).toBe(true);
     // §1.8: the data is not the whole artifact. Schema, dictionary and dataset definition
@@ -101,9 +106,16 @@ describe('export from the app', () => {
   });
 
   it('reports a real failure as an error, not as success', async () => {
-    await app.evaluate(async () => {
-      process.env['DATERA_TEST_DIRECTORY'] = '/definitely/not/a/writable/path';
-    });
+    // A path *inside a file*, which no operating system can create a directory under.
+    // '/definitely/not/a/writable/path' is unwritable on macOS and Linux and perfectly
+    // creatable on Windows, where the export then succeeded and the test failed.
+    const blocked = join(exportDir, 'a-file.txt', 'inside');
+    await writeFile(join(exportDir, 'a-file.txt'), 'not a directory');
+    // The first parameter of an ElectronApplication.evaluate callback is the electron
+    // module; the payload is the second.
+    await app.evaluate(async (_electron, target: string) => {
+      process.env['DATERA_TEST_DIRECTORY'] = target;
+    }, blocked);
 
     await page.click('text=Export as parquet');
     await expect.poll(async () => page.textContent('.shape'), { timeout: 30_000 })

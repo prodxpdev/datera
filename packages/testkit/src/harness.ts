@@ -65,7 +65,9 @@ export async function openTestWorkspace(
     ports,
     workspacePath,
     async dispose() {
-      await datera.close();
+      // Tolerant: a test that closes early — to read the database file, which Windows
+      // will not open while it is held — still runs this in its teardown.
+      await datera.close().catch(() => undefined);
       if (temporary) await rm(workspacePath, { recursive: true, force: true });
     },
     async reopen() {

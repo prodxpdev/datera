@@ -150,6 +150,11 @@ describe('P1-20 credential handling', () => {
     const stored = [...ws.ports.secrets.snapshot().values()];
     expect(stored).toContain(SECRET);
 
+    // Closed first. Windows will not open a file DuckDB still holds, and a closed
+    // database has flushed its buffers — so this reads what is actually on disk rather
+    // than what happened to have been written so far.
+    await ws.datera.close();
+
     // And nowhere else: not in any file in the workspace directory...
     const files = await readdir(ws.workspacePath, { withFileTypes: true });
     for (const file of files) {

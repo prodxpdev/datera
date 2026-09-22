@@ -83,4 +83,37 @@ describe.runIf(runnable)('the packaged app', () => {
 
     expect(Number(rows[0]?.[0])).toBeGreaterThan(0);
   }, 180_000);
+
+  it('carries the local model runtime, not just the database', async () => {
+    // Reported from the installed app: clicking a suggestion produced
+    // NoBinaryFoundError. llama.cpp ships its binary in a platform package exactly as
+    // DuckDB does, and only DuckDB had been declared — so the JavaScript shipped and the
+    // binary did not. The same bug, missed because this test only ever asked about the
+    // database.
+    //
+    // status() loads the runtime far enough to answer, which is the part that was
+    // failing, without needing gigabytes of weights present.
+    // The app is already running from the test above; firstWindow returns that window.
+    const page = await app.firstWindow();
+    const statuses = await page.evaluate(async () => {
+      const api = (globalThis as unknown as {
+        datera: { listModels(): Promise<{ bundled: { modelId: string }[] }> };
+      }).datera;
+      return (await api.listModels()).bundled.map((m) => m.modelId);
+    });
+
+    expect(statuses.length).toBeGreaterThan(0);
+
+    const binary = await app.evaluate(async ({ app: electronApp }) => {
+      const { existsSync, readdirSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const dir = join(
+        electronApp.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked'),
+        'node_modules/@node-llama-cpp',
+      );
+      return existsSync(dir) ? readdirSync(dir) : [];
+    });
+
+    expect(binary, 'no @node-llama-cpp platform package in the packaged app').not.toEqual([]);
+  }, 120_000);
 });

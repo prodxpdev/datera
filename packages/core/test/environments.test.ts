@@ -66,6 +66,10 @@ describe('§12.10 environments', () => {
       // Not in the listing the UI receives...
       expect(JSON.stringify(await scoped.datera.listEnvironments())).not.toContain('dtra_secret_value');
 
+      // Closed first: Windows will not open a file DuckDB still holds, and a closed
+      // database has flushed its buffers, so this reads what is on disk.
+      await scoped.datera.close();
+
       // ...nor anywhere in the workspace directory, nor in the log.
       for (const entry of await readdir(scoped.workspacePath, { withFileTypes: true })) {
         if (!entry.isFile()) continue;

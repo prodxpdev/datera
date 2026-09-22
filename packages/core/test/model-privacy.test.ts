@@ -74,6 +74,10 @@ describe('model privacy and offline behaviour', () => {
       expect([...ports.secrets.snapshot().values()]).toContain(KEY);
       expect(ports.secrets.snapshot().has(apiKeySecretName('anthropic'))).toBe(true);
 
+      // Closed first: Windows will not open a file DuckDB still holds, and a closed
+      // database has flushed its buffers, so this reads what is on disk.
+      await ws.datera.close();
+
       // Not in any file in the workspace directory...
       for (const entry of await readdir(ws.workspacePath, { withFileTypes: true })) {
         if (!entry.isFile()) continue;

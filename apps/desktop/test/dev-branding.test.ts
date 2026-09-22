@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -40,6 +40,14 @@ function plistValue(plist: string, key: string): string {
 }
 
 describe.runIf(process.platform === 'darwin')('development bundle branding', () => {
+  // Run it first. On a developer's machine `pnpm dev` has already done this; on a fresh
+  // CI runner nothing has, and asserting the bundle is branded before anything branded it
+  // tests the runner's history rather than the script. It is idempotent by design, which
+  // is what makes calling it here safe.
+  beforeAll(() => {
+    execFileSync('node', [script], { encoding: 'utf8' });
+  });
+
   const bundle = bundlePath();
 
   it('names the dev bundle Datera, so the Dock tile matches the packaged app', () => {
