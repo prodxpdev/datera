@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { closeApp } from './close-app.js';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import { serveHttp, type RunningServer } from '@datera/cli';
 import {
@@ -69,7 +70,7 @@ describe('driving a Datera Server from the app', () => {
   }, 180_000);
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
     await server?.close();
     await remote?.dispose();
     await rm(workspacePath, { recursive: true, force: true });

@@ -18,13 +18,37 @@ import type { DateraApi } from '../shared/contract.js';
 export function Dictionary({
   api,
   sources,
+  drafts,
+  onDraftsChange,
 }: {
   readonly api: DateraApi;
   readonly sources: readonly SourceWithStatus[];
+  /**
+   * Drafts, held above this component so they survive leaving the view.
+   *
+   * They used to live in local state, so navigating away discarded them without a word —
+   * and since a draft looks exactly like saved work until you look at the state column,
+   * that read as losing confirmed meanings. Nothing was ever lost; it just looked that
+   * way, which for a product whose whole claim is showing you what it did is nearly as
+   * bad.
+   */
+  readonly drafts: ReadonlyMap<string, SourceDictionary>;
+  readonly onDraftsChange: (next: ReadonlyMap<string, SourceDictionary>) => void;
 }): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(sources[0]?.id ?? null);
   const [dictionary, setDictionary] = useState<SourceDictionary | null>(null);
-  const [draft, setDraft] = useState<SourceDictionary | null>(null);
+
+  const draft = selectedId === null ? null : drafts.get(selectedId) ?? null;
+  const setDraft = useCallback(
+    (next: SourceDictionary | null): void => {
+      if (selectedId === null) return;
+      const updated = new Map(drafts);
+      if (next === null) updated.delete(selectedId);
+      else updated.set(selectedId, next);
+      onDraftsChange(updated);
+    },
+    [drafts, onDraftsChange, selectedId],
+  );
   const [busy, setBusy] = useState(false);
 
   /**
@@ -35,11 +59,6 @@ export function Dictionary({
     if (selectedId === null) return;
     setDictionary(await api.getDictionary(selectedId));
   }, [api, selectedId]);
-
-  // Switching sources *does* drop the draft — it belongs to the source it was drafted from.
-  useEffect(() => {
-    setDraft(null);
-  }, [selectedId]);
 
   useEffect(() => {
     void load();
@@ -73,6 +92,7 @@ export function Dictionary({
           selectedId,
           definitions.map((d) => ({ ...d, state: 'confirmed' as const })),
         );
+        setDraft(null);
         await load();
       } finally {
         setBusy(false);

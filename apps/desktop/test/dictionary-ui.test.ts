@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { closeApp } from './close-app.js';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import { fixturePaths, type FixturePaths } from '@datera/testkit';
 
@@ -46,7 +47,7 @@ describe('Dictionary drafting', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
     await rm(workspacePath, { recursive: true, force: true });
   });
 
@@ -72,6 +73,19 @@ describe('Dictionary drafting', () => {
       rows.filter((r) => !/no meaning yet/.test(r.textContent ?? '')).length,
     );
     expect(stillProposed).toBe(drafted);
+  });
+
+  it('keeps a draft when you leave the view and come back', async () => {
+    // Reported as meanings not being saved. Nothing was lost — confirmed rows persist —
+    // but leaving the view discarded the *draft* silently, and a drafted row looks like
+    // saved work until you read the state column. For a product whose claim is showing
+    // you what it did, looking like data loss is nearly as bad as being it.
+    await page.click('[data-nav="query"]');
+    await page.click('[data-nav="meaning"]');
+    await page.waitForSelector('.dicttbl');
+
+    expect(await page.textContent('.dicttbl')).not.toMatch(/no meaning yet/);
+    expect(await page.locator('[data-confirm-all]').count()).toBe(1);
   });
 
   it('confirms every remaining drafted row at once', async () => {

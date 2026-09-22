@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { closeApp } from './close-app.js';
 import { _electron as electron, type ElectronApplication } from 'playwright';
 import { fixturePaths } from '@datera/testkit';
 
@@ -33,7 +34,7 @@ describe.runIf(runnable)('the packaged app', () => {
   let workspacePath: string;
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
     if (workspacePath !== undefined) await rm(workspacePath, { recursive: true, force: true });
   });
 

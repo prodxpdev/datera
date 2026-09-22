@@ -45,17 +45,17 @@ export function Activity({
     <div className="serve">
       <div className="subnav">
         <button data-serve="log" className={tab === 'log' ? 'on' : ''} onClick={() => setTab('log')}>
-          Traffic log
+          Requests
         </button>
         <button data-serve="tools" className={tab === 'tools' ? 'on' : ''} onClick={() => setTab('tools')}>
-          Tools ({tools.length})
+          What agents can call ({tools.length})
         </button>
         <button
           data-serve="operations"
           className={tab === 'operations' ? 'on' : ''}
           onClick={() => setTab('operations')}
         >
-          Operations
+          Operations you define
         </button>
       </div>
 
@@ -64,7 +64,8 @@ export function Activity({
       {tab === 'tools' && (
         <>
           <p className="tierdesc">
-            Generated from the datasets that exist right now. A search tool appears only where
+            <b>What an AI agent connected to this workspace is allowed to do.</b> Generated
+            from the datasets that exist right now. A search tool appears only where
             something is embedded, and a write tool only where a grant exists — Datera does not
             advertise a tool that would fail when called.
           </p>
@@ -108,12 +109,18 @@ export function Activity({
             <span className="logpolicyhint">Retention and payload capture live in Settings → Privacy.</span>
           </div>
 
+          <p className="tierdesc">
+            Every request Datera has answered — here, over the API, and from an agent.
+            <b> Select one to see every step it took</b>: how it was routed, exactly what was
+            sent to a model, the SQL, and what came back.
+          </p>
+
           <div className="logtable">
             <table>
               <thead>
                 <tr>
                   <th>when</th><th>origin</th><th>route</th><th>question</th>
-                  <th>model</th><th>ms</th><th>rows</th><th>cost</th><th />
+                  <th>model</th><th>ms</th><th>rows</th><th>cost</th><th>trace</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,7 +134,7 @@ export function Activity({
                     <td>{Math.round(r.totalMs)}</td>
                     <td>{r.rowsReturned}</td>
                     <td>{r.costUsd === 0 ? '$0' : `$${r.costUsd.toFixed(4)}`}</td>
-                    <td>{r.ok ? '' : '⚠'}</td>
+                    <td className="tracecell">{r.ok ? '' : '⚠ '}every step →</td>
                   </tr>
                 ))}
               </tbody>

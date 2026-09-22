@@ -678,3 +678,9 @@
    weights are here. .opt.off stays for the case that really is unavailable. */
 .opt.pending { cursor: default; }
 .opt.pending .radio { opacity: .35; }
+
+/* The trace is the thing this product is built around; a clickable row with no affordance
+   hid it behind a guess. */
+.logtable tbody tr { cursor: pointer; }
+.logtable tbody tr:hover { background: var(--indigo-bg); }
+.tracecell { color: var(--indigo); white-space: nowrap; font-size: 11px; }

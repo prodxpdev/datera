@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   Dataset,
   ModelCatalogue,
+  SourceDictionary,
   ReachableDataset,
   EngineInfo,
   PreviewResult,
@@ -91,6 +92,11 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
   const [nav, setNav] = useState<NavId>('data');
   const [dataTab, setDataTab] = useState<DataTab>('sources');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Held here so leaving the Meaning view does not discard drafted meanings. Keyed by
+  // source, so switching between sources keeps each one's draft.
+  const [dictionaryDrafts, setDictionaryDrafts] = useState<ReadonlyMap<string, SourceDictionary>>(
+    new Map(),
+  );
   const [pendingWorkbooks, setPendingWorkbooks] = useState<
     readonly { path: string; sheets: readonly string[] }[]
   >([]);
@@ -427,7 +433,12 @@ export function Workspace({ api }: { readonly api: DateraApi }): JSX.Element {
           )}
 
           {nav === 'meaning' && (
-            <Dictionary api={api} sources={loaded.sources.filter((s) => s.datasetId === activeId)} />
+            <Dictionary
+              api={api}
+              sources={loaded.sources.filter((s) => s.datasetId === activeId)}
+              drafts={dictionaryDrafts}
+              onDraftsChange={setDictionaryDrafts}
+            />
           )}
 
           {nav === 'learn' && <Learn api={api} />}
