@@ -27,6 +27,9 @@ const appRoot = resolve(fileURLToPath(import.meta.url), '..', '..');
 /** Widths worth caring about: a small laptop, a common laptop, and a wide display. */
 const WIDTHS = [900, 1100, 1280, 1680] as const;
 
+/** BrowserWindow.minWidth. Requesting less than this silently gets this. */
+const MIN_WINDOW_WIDTH = 900;
+
 describe('Workspace layout is responsive', () => {
   let app: ElectronApplication;
   let page: Page;
@@ -70,8 +73,19 @@ describe('Workspace layout is responsive', () => {
       const win = BrowserWindow.getAllWindows()[0];
       win?.setBounds({ x: 40, y: 40, width: w, height: 860 });
     }, width);
-    // Let the resize settle and React re-render.
-    await page.waitForTimeout(250);
+    // Wait for the resize to actually land, rather than for a fixed interval. A resize
+    // crosses the main process, the compositor and a React render; 250ms was enough on a
+    // quiet laptop and not on a loaded CI runner, where the assertion then measured the
+    // *previous* width and failed as though the layout were broken.
+    //
+    // Clamped to the window's own minWidth: asking for 820 gets 900, which is still
+    // narrow enough for the breakpoints under test but never becomes 820.
+    const effective = Math.max(width, MIN_WINDOW_WIDTH);
+    await expect
+      .poll(async () => page.evaluate(() => document.documentElement.clientWidth), {
+        timeout: 15_000,
+      })
+      .toBeLessThanOrEqual(effective + 4);
   }
 
   it.each(WIDTHS)('does not scroll horizontally at %ipx', async (width) => {
