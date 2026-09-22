@@ -3,6 +3,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { closeApp } from './close-app.js';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import { fixturePaths, type FixturePaths } from '@datera/testkit';
 
@@ -57,7 +58,7 @@ describe('export from the app', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
     await rm(workspacePath, { recursive: true, force: true });
     await rm(exportDir, { recursive: true, force: true });
   });

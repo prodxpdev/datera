@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { closeApp } from './close-app.js';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import { fixturePaths, fingerprintFile, type FixturePaths } from '@datera/testkit';
 
@@ -48,7 +49,7 @@ describe('P1-18/P1-19 Electron shell', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
     await rm(workspacePath, { recursive: true, force: true });
   });
 
