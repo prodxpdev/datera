@@ -57,6 +57,19 @@ csr)
 p12)
   cer="${2:-}"
   [ -n "$cer" ] && [ -f "$cer" ] || { echo "Usage: $0 p12 <developerID_application.cer>" >&2; exit 1; }
+
+  # macOS restricts Downloads, Desktop and Documents per application. The file is visible
+  # to stat and unopenable, so an existence check passes and openssl then fails with
+  # "Operation not permitted" — which reads like a permissions bug in the script rather
+  # than a privacy prompt that was never granted.
+  if ! head -c 1 "$cer" >/dev/null 2>&1; then
+    echo "macOS will not let this terminal read $cer." >&2
+    echo >&2
+    echo "Either move the file somewhere unrestricted — in Finder, drag it to your home" >&2
+    echo "folder — or grant access: System Settings -> Privacy & Security -> Files and" >&2
+    echo "Folders -> Terminal, and enable Downloads." >&2
+    exit 1
+  fi
   [ -f "$KEY" ] || { echo "No key at $KEY — run '$0 csr' first." >&2; exit 1; }
 
   # Apple hands back DER; openssl wants PEM to bundle it.
