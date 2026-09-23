@@ -9,6 +9,8 @@ export { NodeDuckDBDriver, nodeDuckDBDriver } from './duckdb-driver.js';
 export { NodeFileSystem, SystemClock, ConsoleLogger, UnavailableSecretStore } from './ports.js';
 export type { ConsoleLoggerOptions } from './ports.js';
 export { resolveExtensionDirectory } from './extension-dir.js';
+export { installExtensions } from './install-extensions.js';
+export type { ExtensionInstallResult } from './install-extensions.js';
 export { NodeHttp } from './http.js';
 export { NodeLocalLlm } from './local-llm.js';
 export type { NodeLocalLlmOptions } from './local-llm.js';

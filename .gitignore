@@ -21,3 +21,4 @@ developer-id.*
 
 # Model weights staged for the offline installer build — gigabytes, fetched on demand.
 apps/desktop/models/
+apps/desktop/build/extensions-packed/

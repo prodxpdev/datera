@@ -41,10 +41,22 @@ export interface ServerInfo {
  * and so the HTTP host can reuse it verbatim — one implementation of the protocol, two
  * ways of carrying it.
  */
+/**
+ * What called, and how it got here.
+ *
+ * Carried across a connection rather than per request, because the client only names
+ * itself once, in the initialize handshake — which is the only place its name exists.
+ */
+export interface CallerContext {
+  transport: 'stdio' | 'http';
+  client?: string | undefined;
+}
+
 export async function handleRpc(
   datera: Datera,
   request: JsonRpcRequest,
   info: ServerInfo,
+  caller: CallerContext = { transport: 'stdio' },
 ): Promise<JsonRpcResponse | null> {
   const id = request.id ?? null;
 
@@ -56,12 +68,19 @@ export async function handleRpc(
   });
 
   switch (request.method) {
-    case 'initialize':
+    case 'initialize': {
+      // The handshake is the one message that says who is calling. Kept, so every later
+      // tool call can say so too instead of reporting an anonymous 'Agent'.
+      const clientInfo = (request.params as { clientInfo?: { name?: unknown } } | undefined)?.clientInfo;
+      if (typeof clientInfo?.name === 'string' && clientInfo.name.length > 0) {
+        caller.client = clientInfo.name.slice(0, 64);
+      }
       return ok({
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: info,
       });
+    }
 
     // Notifications carry no id and expect no response.
     case 'notifications/initialized':
@@ -88,7 +107,7 @@ export async function handleRpc(
 
       // Every guard lives in the core, so a request arriving over MCP is subject to
       // exactly the rules the UI is — read-only, the dataset boundary, and the write gate.
-      const result = await datera.callTool(name, args);
+      const result = await datera.callTool(name, args, caller);
       return ok({ content: result.content, isError: result.isError });
     }
 
@@ -132,6 +151,10 @@ export function serveStdio(options: StdioOptions): Promise<void> {
     stdin.on('end', () => resolve());
     stdin.on('close', () => resolve());
 
+    // One per process: a stdio server serves exactly one client, which is the whole
+    // point of the transport.
+    const caller: CallerContext = { transport: 'stdio' };
+
     async function dispatch(line: string): Promise<void> {
       let request: JsonRpcRequest;
       try {
@@ -142,7 +165,7 @@ export function serveStdio(options: StdioOptions): Promise<void> {
       }
 
       try {
-        const response = await handleRpc(datera, request, info);
+        const response = await handleRpc(datera, request, info, caller);
         if (response !== null) write(response);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

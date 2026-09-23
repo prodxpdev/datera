@@ -63,6 +63,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @datera/desktop build
+      # Staged for the *tests*, which run against the repo rather than the package. The
+      # packaged app fetches its own at first run — see install-extensions.ts.
       - run: node scripts/stage-extensions.mjs
 
       # electron-builder wants the notarization key as a *file path*, and a secret can only
@@ -112,11 +114,16 @@ jobs:
             exit 1
           fi
 
-      - name: Assert the DuckDB extensions shipped
+      # The inverse of what this used to assert. A .duckdb_extension cannot be codesigned,
+      # and Apple's notary unpacks archives to find them — so one inside the bundle, in any
+      # form, makes the build un-notarizable.
+      - name: Assert no unsignable extension shipped
         shell: bash
         run: |
-          if ! find apps/desktop/release -path '*duckdb-extensions*' -name '*.duckdb_extension' | grep -q .; then
-            echo "::error::No staged DuckDB extensions — xlsx and SQLite would fail."
+          found=$(find apps/desktop/release \( -name '*.duckdb_extension' -o -name '*.duckdb_extension.gz' \) | head -3)
+          if [ -n "$found" ]; then
+            echo "::error::Unsignable DuckDB extensions in the bundle — notarization will fail."
+            echo "$found"
             exit 1
           fi
 

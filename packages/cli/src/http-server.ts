@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Datera } from '@datera/core';
-import { handleRpc, type JsonRpcRequest, type ServerInfo } from './mcp-stdio.js';
+import { handleRpc, type CallerContext, type JsonRpcRequest, type ServerInfo } from './mcp-stdio.js';
 
 /**
  * MCP over HTTP, plus a small REST surface (spec §8).
@@ -53,6 +53,23 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
     );
   }
 
+  /**
+   * Named callers, by session.
+   *
+   * Bounded deliberately: this is a map an unauthenticated-ish caller could otherwise
+   * grow without limit by handshaking in a loop. The oldest session is dropped, which
+   * costs that client its name and nothing else.
+   */
+  const sessions = new Map<string, CallerContext>();
+  const MAX_SESSIONS = 64;
+  const remember = (id: string, caller: CallerContext): void => {
+    if (sessions.size >= MAX_SESSIONS) {
+      const oldest = sessions.keys().next().value;
+      if (oldest !== undefined) sessions.delete(oldest);
+    }
+    sessions.set(id, caller);
+  };
+
   const server: Server = createServer((req, res) => {
     void route(req, res).catch((e: unknown) => {
       respond(res, 500, { error: e instanceof Error ? e.message : String(e) });
@@ -84,8 +101,29 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
         return;
       }
 
-      const response = await handleRpc(options.datera, request, options.info);
-      respond(res, 200, response ?? {});
+      // A client names itself once, in the handshake, and over stdio the process simply
+      // remembers because one process serves one client. HTTP has no such thing, so every
+      // served request was traced as an anonymous "Agent" however the handshake
+      // introduced itself — the trace's most useful field blank, on the transport an
+      // agent is most likely to arrive over.
+      //
+      // `Mcp-Session-Id` is the protocol's own answer: the server issues one on
+      // initialize and the client echoes it. A client that sends no session is still
+      // served; it is simply not given a name it never provided.
+      const existing = req.headers['mcp-session-id'];
+      const caller: CallerContext =
+        typeof existing === 'string' ? sessions.get(existing) ?? { transport: 'http' } : { transport: 'http' };
+
+      const response = await handleRpc(options.datera, request, options.info, caller);
+
+      const headers: Record<string, string> = {};
+      if (request.method === 'initialize' && caller.client !== undefined) {
+        const id = randomUUID();
+        remember(id, caller);
+        headers['mcp-session-id'] = id;
+      }
+
+      respond(res, 200, response ?? {}, headers);
       return;
     }
 
@@ -143,9 +181,11 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
     if (url.startsWith('/api/query') && req.method === 'POST') {
       const body = await readBody(req);
       const parsed = JSON.parse(body) as { dataset?: string; sql?: string };
-      const result = await options.datera.callTool(`query_${String(parsed.dataset ?? 'ungrouped')}`, {
-        sql: parsed.sql ?? '',
-      });
+      const result = await options.datera.callTool(
+        `query_${String(parsed.dataset ?? 'ungrouped')}`,
+        { sql: parsed.sql ?? '' },
+        { transport: 'http' },
+      );
       respond(res, result.isError ? 400 : 200, result);
       return;
     }
@@ -186,8 +226,17 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function respond(res: ServerResponse, status: number, payload: unknown): void {
+function respond(
+  res: ServerResponse,
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): void {
   const body = JSON.stringify(payload);
-  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    'content-length': Buffer.byteLength(body),
+    ...headers,
+  });
   res.end(body);
 }

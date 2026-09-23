@@ -94,12 +94,6 @@
       "**/node_modules/node-llama-cpp/**",
       "**/node_modules/@node-llama-cpp/**"
     ],
-    "extraResources": [
-      {
-        "from": "../../vendor/duckdb-extensions",
-        "to": "duckdb-extensions"
-      }
-    ],
     "dmg": {
       "title": "Datera ${version}"
     },

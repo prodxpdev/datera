@@ -171,6 +171,74 @@ describe('§8 HTTP transport', () => {
     expect(body.result.tools.map((t) => t.name)).toContain('query_ungrouped');
   });
 
+  it('carries the client name from initialize into later calls, via a session', async () => {
+    // Over stdio a client names itself once and the process remembers, because one
+    // process serves one client. HTTP has no such thing, so every served request was
+    // traced as an anonymous "Agent" no matter what the handshake said — the trace's
+    // most useful field, blank, for the transport an agent is most likely to use.
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    const initialize = await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'Cursor' } },
+      }),
+    });
+
+    const session = initialize.headers.get('mcp-session-id');
+    expect(session).not.toBeNull();
+
+    await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'mcp-session-id': session! },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'query_ungrouped', arguments: { sql: 'SELECT 1' } },
+      }),
+    });
+
+    const [record] = await ws.datera.queryTraceLog({ limit: 1 });
+    expect(record?.stages[0]?.label).toBe('Cursor');
+    expect(record?.stages[1]?.label).toBe('HTTP');
+  });
+
+  it('still answers a client that never handshakes, without inventing a name', async () => {
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: 'query_ungrouped', arguments: { sql: 'SELECT 1' } },
+      }),
+    });
+
+    const [record] = await ws.datera.queryTraceLog({ limit: 1 });
+    expect(record?.stages[0]?.label).toBe('Agent');
+  });
+
+  it('closes promptly even while an agent holds a keep-alive connection', async () => {
+    // `server.close()` stops accepting and then waits for open connections to end, while
+    // an HTTP client keeps its socket alive by default. Node has closed *idle* keep-alive
+    // connections on close() since v19, so this holds today — it is pinned because the
+    // desktop app waits on exactly this in `before-quit`, and anything long-lived added
+    // to /mcp later (streaming, SSE) would turn quitting Datera into a hang.
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    await fetch(`${server.url}/healthz`);
+
+    const closed = server.close();
+    const raced = await Promise.race([
+      closed.then(() => 'closed' as const),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 3_000)),
+    ]);
+    expect(raced).toBe('closed');
+    server = null;
+  });
+
   it('answers health checks without a credential', async () => {
     server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, token: 'secret-token', log: () => {} });
 

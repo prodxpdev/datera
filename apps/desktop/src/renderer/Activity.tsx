@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Dataset, ToolDefinition, TraceRecord } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 import { Operations } from './Operations.js';
+import { TraceFlow } from './TraceFlow.js';
 
 /**
  * Activity — what agents can call, and every request that ran (spec §8, §8a).
@@ -171,6 +172,8 @@ export function Activity({
                       is not that. */}
                   {selected.stages.length > 0 ? (
                     <>
+                      <TraceFlow stages={selected.stages} totalMs={selected.totalMs} />
+
                       <div className="payloadlabel">Every step, in order:</div>
                       {selected.stages.map((stage, i) => (
                         <div className={`stage stage-${stage.kind}`} key={`${stage.kind}-${i}`}>

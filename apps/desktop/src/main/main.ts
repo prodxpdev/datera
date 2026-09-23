@@ -17,8 +17,10 @@ import {
   NodeLocalLlm,
   nodeDuckDBDriver,
   resolveExtensionDirectory,
+  installExtensions,
 } from '@datera/node-runtime';
 import { IPC, type SerialisedError } from '../shared/contract.js';
+import { Serving } from './serving.js';
 import { SafeStorageSecretStore, secretStorePath } from './secret-store.js';
 
 const here = resolve(fileURLToPath(import.meta.url), '..');
@@ -70,6 +72,17 @@ function defaultWorkspacePath(): string {
   return join(app.getPath('userData'), 'workspaces', 'default');
 }
 
+/**
+ * Where a packaged build keeps its DuckDB extensions.
+ *
+ * Its own data directory, not the app bundle: they cannot be signed, and anything
+ * unsignable inside the bundle makes the whole app un-notarizable. See
+ * install-extensions.ts.
+ */
+function packagedExtensionDirectory(): string {
+  return join(app.getPath('userData'), 'duckdb-extensions');
+}
+
 async function openCore(): Promise<Datera> {
   const workspacePath = defaultWorkspacePath();
   return Datera.open({
@@ -94,11 +107,14 @@ async function openCore(): Promise<Datera> {
         seedDirectory: app.isPackaged ? join(process.resourcesPath, 'models') : join(appRoot, 'models'),
       }),
     },
-    // Packaged: the staged extensions ride along in Contents/Resources. Unpackaged: found
-    // by walking up from the app root. Getting this wrong in a packaged build is silent —
-    // xlsx and SQLite simply stop working — so it is asserted by the packaged smoke test.
+    // Packaged: the extensions ship gzipped (codesign refuses a .duckdb_extension, which
+    // is a Mach-O library with metadata appended) and are unpacked into the app's data
+    // directory on first run. Unpackaged: found by walking up from the app root.
+    //
+    // Getting this wrong in a packaged build is silent — xlsx and SQLite simply stop
+    // working — so the packaged smoke test asserts both extensions actually load.
     extensionDirectory: app.isPackaged
-      ? join(process.resourcesPath, 'duckdb-extensions')
+      ? packagedExtensionDirectory()
       : resolveExtensionDirectory(appRoot),
     appVersion: app.getVersion(),
   });
@@ -136,6 +152,12 @@ function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Pro
     }
   });
 }
+
+const serving = new Serving(
+  () => core(),
+  app.getVersion(),
+  (message) => console.log(`[datera] ${message}`),
+);
 
 function core(): Datera {
   if (datera === null) throw new Error('The Datera engine is not open yet.');
@@ -199,6 +221,10 @@ function registerHandlers(): void {
   );
   handle(IPC.callTool, async (name: string, args: Record<string, unknown>) => core().callTool(name, args));
   handle(IPC.connectConfig, async (client: never, opts?: never) => core().connectConfig(client, opts ?? {}));
+  handle(IPC.servingStatus, async () => serving.status());
+  handle(IPC.startServing, async (port?: number) => serving.start(port));
+  handle(IPC.stopServing, async () => serving.stop());
+  handle(IPC.rotateServingToken, async () => serving.rotate());
   handle(IPC.queryTraceLog, async (query: never) => core().queryTraceLog(query ?? {}));
   handle(IPC.getTraceRetention, async () => core().getTraceRetention());
   handle(IPC.setTraceRetention, async (policy: never) => core().setTraceRetention(policy));
@@ -466,6 +492,24 @@ app.whenReady().then(async () => {
   installApplicationMenu();
   registerHandlers();
 
+  // Fetched once, before the engine opens, so a first launch has them and every launch
+  // after this costs a directory check. Never fatal: an app that will not start because a
+  // spreadsheet reader could not be downloaded is worse than one that starts and says so.
+  if (app.isPackaged) {
+    try {
+      const result = await installExtensions(packagedExtensionDirectory(), {
+        onProgress: (name) => console.log(`[datera] fetching extension: ${name}`),
+      });
+      if (result.failed.length > 0) {
+        console.error(
+          `[datera] could not fetch: ${result.failed.map((f) => `${f.name} (${f.reason})`).join(', ')}`,
+        );
+      }
+    } catch (e) {
+      console.error('[datera] extension setup failed', e);
+    }
+  }
+
   try {
     datera = await openCore();
   } catch (e) {
@@ -478,6 +522,10 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+
+  // Resume serving if this workspace was left served. Not awaited and never fatal: the
+  // app opening must not depend on a port being free.
+  void serving.resume().catch(() => undefined);
 
   // Load a selected bundled model in the background, so the first question is not the one
   // that pays for reading two gigabytes off disk. Deliberately after the window and not
@@ -498,6 +546,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  void datera?.close();
-  datera = null;
+  // The listener goes down before the workspace does, so a request in flight cannot
+  // reach a closed engine.
+  void serving.shutdown().finally(() => {
+    void datera?.close();
+    datera = null;
+  });
 });

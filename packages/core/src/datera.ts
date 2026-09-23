@@ -90,6 +90,13 @@ import {
   recordTrace, type RetentionPolicy, type TraceOrigin, type TraceQuery, type TraceRecord,
 } from './serve/trace-log.js';
 import {
+  generateServingToken,
+  parseServingPreference,
+  SERVING_SETTING,
+  SERVING_TOKEN_KEY,
+  type ServingPreference,
+} from './serve/serving.js';
+import {
   applyWrite, assertWriteInDataset, classifyWrite, grant as grantWriteIn, isGranted,
   migrateWrites, previewWrite, restore, revoke as revokeWriteIn,
   type AppliedWrite, type WriteProposal,
@@ -799,6 +806,23 @@ export class Datera {
     /** Bound after the guard has approved the statement, never interpolated into it. */
     params?: readonly SqlParam[],
   ): Promise<QueryResult> {
+    return this.runQuery(datasetId, sql, params, true);
+  }
+
+  /**
+   * The query path, with a say in whether it writes its own log record.
+   *
+   * A served tool call is one request and belongs in the log once. Recording here as well
+   * produced two entries for it — the tool's trace, with its agent and transport hops,
+   * and the bare query underneath — which double-counts every served request and buries
+   * the one that describes what actually happened.
+   */
+  private async runQuery(
+    datasetId: string,
+    sql: string,
+    params: readonly SqlParam[] | undefined,
+    record: boolean,
+  ): Promise<QueryResult> {
     const dataset = await this.getDataset(datasetId);
     await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
 
@@ -826,12 +850,12 @@ export class Datera {
         params,
       );
     } catch (e) {
-      await this.recordQuery(trace, datasetId, 0, false, (e as { message?: string }).message);
+      if (record) await this.recordQuery(trace, datasetId, 0, false, (e as { message?: string }).message);
       throw e;
     }
 
     const { resultSet, check, durationMs } = executed;
-    await this.recordQuery(trace, datasetId, resultSet.rows.length, true);
+    if (record) await this.recordQuery(trace, datasetId, resultSet.rows.length, true);
 
     return {
       datasetId,
@@ -2281,17 +2305,48 @@ export class Datera {
    * the write gate. A request arriving over MCP is not trusted more than one typed into
    * the SQL editor.
    */
-  async callTool(name: string, args: Readonly<Record<string, unknown>>): Promise<ToolResult> {
+  async callTool(
+    name: string,
+    args: Readonly<Record<string, unknown>>,
+    /**
+     * Where the call came from, when it came from outside.
+     *
+     * Supplied by the host, because only the host knows: the core has no idea whether it
+     * is being driven over stdio, over HTTP, or from the app's own UI. Absent means a
+     * local call, and the trace simply starts at Datera.
+     */
+    via?: { readonly transport?: 'stdio' | 'http' | undefined; readonly client?: string | undefined },
+  ): Promise<ToolResult> {
     const trace = new TraceBuilder(
       this.makeId(), 'unknown', name,
       this.ports.clock.now().toISOString(), () => this.ports.clock.monotonicMs(),
     );
+
+    // The two hops before Datera. Recorded first so a served request reads as the journey
+    // it is — something called, over something — rather than beginning mid-air.
+    if (via !== undefined) {
+      trace.add({
+        kind: 'agent',
+        label: via.client ?? 'Agent',
+        detail: `called ${name}(${Object.keys(args).join(', ')})`,
+      });
+      trace.add({
+        kind: 'transport',
+        label: via.transport === 'http' ? 'HTTP' : 'stdio',
+        detail:
+          via.transport === 'http'
+            ? 'Arrived over HTTP, authenticated with the local token.'
+            : 'Arrived over stdio — no port, no token, nothing listening.',
+      });
+    }
+
     trace.add({ kind: 'parse', label: 'Tool call received', detail: `${name}(${Object.keys(args).join(', ')})` });
 
-    const fail = async (message: string, datasetId = 'unknown'): Promise<ToolResult> => {
+    // The dataset is not a parameter here: it is set on the trace the moment it is known,
+    // so a failure is attributed to the same dataset a success would be.
+    const fail = async (message: string): Promise<ToolResult> => {
       const built = trace.build('structured', false);
       await this.record(built, { origin: 'tool', rowsReturned: 0, ok: false, error: message });
-      void datasetId;
       return { content: [{ type: 'text', text: message }], isError: true, trace: built };
     };
 
@@ -2302,6 +2357,7 @@ export class Datera {
     // all carry a `query_`/`search_`/`propose_write_` prefix or are `describe_schema`).
     const operation = (await this.catalog.listOperations()).find((o) => o.name === name);
     if (operation !== undefined) {
+      trace.forDataset(operation.datasetId);
       trace.add({ kind: 'route', label: 'Authored operation', detail: `${operation.name} (${operation.kind})` });
       try {
         const result = await this.callOperation(operation.datasetId, operation.name, args);
@@ -2313,7 +2369,7 @@ export class Datera {
           trace: built,
         };
       } catch (e) {
-        return fail((e as { message?: string }).message ?? String(e), operation.datasetId);
+        return fail((e as { message?: string }).message ?? String(e));
       }
     }
 
@@ -2321,6 +2377,7 @@ export class Datera {
       const datasetId = typeof args['dataset'] === 'string' ? args['dataset'] : DEFAULT_DATASET_ID;
       const dataset = datasets.find((d) => d.id === datasetId);
       if (dataset === undefined) return fail(`Unknown dataset "${datasetId}".`);
+      trace.forDataset(dataset.id);
 
       const schemas = await this.datasetSchemas(dataset.id, dataset.schemaName);
       const dictionaries: SourceDictionary[] = [];
@@ -2340,13 +2397,14 @@ export class Datera {
 
     const dataset = datasets.find((d) => name.endsWith(`_${toolSuffix(d)}`));
     if (dataset === undefined) return fail(`Unknown tool "${name}".`);
+    trace.forDataset(dataset.id);
 
     if (name.startsWith('query_')) {
       const sql = typeof args['sql'] === 'string' ? args['sql'] : '';
       if (sql.length === 0) return fail('The `sql` argument is required.');
 
       try {
-        const result = await this.query(dataset.id, sql);
+        const result = await this.runQuery(dataset.id, sql, undefined, false);
         trace.add({ kind: 'guard', label: 'Read-only check', detail: 'Passed.' });
         trace.add({ kind: 'execute', label: 'Ran locally', rowCount: result.rows.length });
 
@@ -2359,8 +2417,21 @@ export class Datera {
           trace: built,
         };
       } catch (e) {
-        trace.add({ kind: 'guard', label: 'Refused', detail: e instanceof Error ? e.message : String(e) });
-        return fail(e instanceof Error ? e.message : String(e), dataset.id);
+        // Two very different failures arrive here, and calling both "Refused" under the
+        // guard reads as Datera declining on principle when DuckDB simply could not run
+        // the statement. The codes already distinguish them; the trace now does too.
+        const message = e instanceof Error ? e.message : String(e);
+        const refused =
+          DateraError.is(e, 'READ_ONLY_VIOLATION') ||
+          DateraError.is(e, 'CROSS_DATASET_ACCESS') ||
+          DateraError.is(e, 'WRITE_NOT_PERMITTED');
+
+        trace.add(
+          refused
+            ? { kind: 'guard', label: 'Refused', detail: message }
+            : { kind: 'execute', label: 'Could not run', detail: message },
+        );
+        return fail(message);
       }
     }
 
@@ -2410,7 +2481,7 @@ export class Datera {
           trace: built,
         };
       } catch (e) {
-        return fail(e instanceof Error ? e.message : String(e), dataset.id);
+        return fail(e instanceof Error ? e.message : String(e));
       }
     }
 
@@ -2455,6 +2526,53 @@ export class Datera {
     } catch {
       return DEFAULT_RETENTION;
     }
+  }
+
+  // ------------------------------------------------- serving this workspace (§8)
+
+  /**
+   * Whether an agent may reach this workspace, and on which port.
+   *
+   * The core keeps the decision and hands it to whichever host is capable of listening;
+   * it never opens a socket itself (§1.7). Off by default — a listening port is not
+   * something to acquire by installing an app.
+   */
+  async getServingPreference(): Promise<ServingPreference> {
+    return parseServingPreference(await this.catalog.getSetting(SERVING_SETTING));
+  }
+
+  async setServingPreference(preference: Partial<ServingPreference>): Promise<ServingPreference> {
+    const next = { ...(await this.getServingPreference()), ...preference };
+    await this.catalog.setSetting(SERVING_SETTING, JSON.stringify(next));
+    return next;
+  }
+
+  /**
+   * The token that guards the served socket, created on first use and then kept.
+   *
+   * Kept, rather than minted per start, because an agent's configuration names it: a
+   * token that changed on every launch would silently break every client that had been
+   * set up. It lives in the OS keychain like every other credential (D-06) — never in
+   * the workspace file, which travels wherever a copy of the data does.
+   */
+  async servingToken(): Promise<string> {
+    const existing = await this.ports.secrets.get(SERVING_TOKEN_KEY);
+    if (existing !== null && existing.length > 0) return existing;
+    return this.rotateServingToken();
+  }
+
+  async rotateServingToken(): Promise<string> {
+    if (!(await this.ports.secrets.isAvailable())) {
+      throw new DateraError(
+        'SECRET_STORE_UNAVAILABLE',
+        'There is nowhere protected to keep a serving token on this machine, so Datera ' +
+          'will not issue one. Writing it beside the data would send it wherever a copy ' +
+          'of the workspace goes.',
+      );
+    }
+    const token = generateServingToken();
+    await this.ports.secrets.set(SERVING_TOKEN_KEY, token);
+    return token;
   }
 
   async queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]> {

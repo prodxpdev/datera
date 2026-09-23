@@ -13,6 +13,16 @@ import type { ModelDescriptor } from '../models/types.js';
  */
 
 export type StageKind =
+  /**
+   * The two hops that happen before Datera is involved at all — the agent that called,
+   * and the transport it arrived over.
+   *
+   * Present only for served requests. A trace that began inside Datera was accurate and
+   * incomplete: for an agent-driven call, the interesting question is often what asked
+   * and how it got here, and that was the part nobody could see.
+   */
+  | 'agent'
+  | 'transport'
   | 'parse'
   | 'route'
   | 'schema'
@@ -84,13 +94,29 @@ export class TraceBuilder {
 
   constructor(
     readonly id: string,
-    readonly datasetId: string,
+    private datasetIdValue: string,
     readonly question: string,
     readonly startedAt: string,
     private readonly monotonicMs: () => number,
   ) {
     this.startedMs = monotonicMs();
     this.lastMs = this.startedMs;
+  }
+
+  get datasetId(): string {
+    return this.datasetIdValue;
+  }
+
+  /**
+   * Name the dataset once it is known.
+   *
+   * A served tool call cannot say at the outset: which dataset it touches is encoded in
+   * the tool's name, and resolving that means reading the catalog, by which point the
+   * trace has already started timing. Every served request was therefore logged against
+   * "unknown" — which made Activity unable to filter agent traffic by dataset at all.
+   */
+  forDataset(datasetId: string): void {
+    this.datasetIdValue = datasetId;
   }
 
   /** Record a stage, timing it from the end of the previous one. */
