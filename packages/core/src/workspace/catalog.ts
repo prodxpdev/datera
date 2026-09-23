@@ -207,6 +207,17 @@ export class Catalog {
     );
   }
 
+  /**
+   * Forget every stored preference.
+   *
+   * Deliberately the whole table rather than a list of known keys: a key added later and
+   * forgotten here would quietly survive a reset, and the failure mode of that is a
+   * setting nobody can explain the origin of.
+   */
+  async clearSettings(): Promise<void> {
+    await this.engine.executeInternal(`DELETE FROM ${CATALOG_SCHEMA}.settings`);
+  }
+
   async getSetting(key: string): Promise<string | null> {
     const result = await this.engine.executeInternal(
       `SELECT value FROM ${CATALOG_SCHEMA}.settings WHERE key = ?`,

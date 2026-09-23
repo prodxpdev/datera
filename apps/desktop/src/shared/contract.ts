@@ -55,6 +55,16 @@ import type {
  * the UI is coupled to this interface rather than to in-process calls. Hence the
  * Promise-returning shape everywhere, including for things that are synchronous today.
  */
+/** One place Datera keeps things, with what it costs to remove it. */
+export interface StorageItem {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly bytes: number;
+  /** True when removing it loses work rather than costing a re-download. */
+  readonly destroysData: boolean;
+}
+
 /** What the host's listener is actually doing right now. */
 export interface ServingStatus {
   readonly running: boolean;
@@ -134,6 +144,18 @@ export interface DateraApi {
    * fails on the lock. The app hosting the listener is what makes an agent and the app
    * usable at the same time, on the data the user is actually looking at.
    */
+  /**
+   * What Datera has stored on this machine, and removing it.
+   *
+   * No operating system answers this: Windows and Linux remove the application well and
+   * neither touches per-user data, and macOS does not even do the application. Only the
+   * app knows where it put things.
+   */
+  storageUsage(): Promise<readonly StorageItem[]>;
+  removeStorage(id: string): Promise<void>;
+  resetSettings(): Promise<void>;
+  removalInstruction(): Promise<string>;
+
   servingStatus(): Promise<ServingStatus>;
   startServing(port?: number): Promise<ServingStatus>;
   stopServing(): Promise<ServingStatus>;
@@ -236,6 +258,10 @@ export const IPC = {
   callOperation: 'datera:callOperation',
   callTool: 'datera:callTool',
   connectConfig: 'datera:connectConfig',
+  storageUsage: 'datera:storageUsage',
+  removeStorage: 'datera:removeStorage',
+  resetSettings: 'datera:resetSettings',
+  removalInstruction: 'datera:removalInstruction',
   servingStatus: 'datera:servingStatus',
   startServing: 'datera:startServing',
   stopServing: 'datera:stopServing',

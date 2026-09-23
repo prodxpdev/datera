@@ -36,6 +36,7 @@ const METHODS = [
   'setEmbeddingModel', 'buildEmbeddings', 'semanticSearch', 'embeddingStatus',
   'listTools', 'callTool', 'createOperation', 'listOperations', 'deleteOperation', 'callOperation', 'connectConfig',
   'servingStatus', 'startServing', 'stopServing', 'rotateServingToken',
+  'storageUsage', 'removeStorage', 'resetSettings', 'removalInstruction',
   'queryTraceLog', 'getTraceRetention',
   'setTraceRetention', 'getTracePayloadCapture', 'setTracePayloadCapture', 'pruneTraceLog',
   'listEnvironments', 'listReachableDatasets', 'environmentStatuses', 'addEnvironment', 'removeEnvironment',

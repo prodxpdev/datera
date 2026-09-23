@@ -21,6 +21,7 @@ import {
 } from '@datera/node-runtime';
 import { IPC, type SerialisedError } from '../shared/contract.js';
 import { Serving } from './serving.js';
+import { removalInstruction, removeStorage, storageUsage } from './storage.js';
 import { SafeStorageSecretStore, secretStorePath } from './secret-store.js';
 
 const here = resolve(fileURLToPath(import.meta.url), '..');
@@ -221,6 +222,10 @@ function registerHandlers(): void {
   );
   handle(IPC.callTool, async (name: string, args: Record<string, unknown>) => core().callTool(name, args));
   handle(IPC.connectConfig, async (client: never, opts?: never) => core().connectConfig(client, opts ?? {}));
+  handle(IPC.storageUsage, async () => storageUsage(defaultWorkspacePath()));
+  handle(IPC.removeStorage, async (id: string) => removeStorage(id, defaultWorkspacePath()));
+  handle(IPC.resetSettings, async () => core().resetSettings());
+  handle(IPC.removalInstruction, async () => removalInstruction());
   handle(IPC.servingStatus, async () => serving.status());
   handle(IPC.startServing, async (port?: number) => serving.start(port));
   handle(IPC.stopServing, async () => serving.stop());

@@ -2595,6 +2595,24 @@ export class Datera {
     return token;
   }
 
+  /**
+   * Put every preference back to its default, and keep the data.
+   *
+   * "Reset" is two different requests wearing one word. Someone whose model choice or
+   * retention window has drifted somewhere unhelpful wants the preferences back and their
+   * datasets untouched; someone leaving wants everything gone. Conflating them is how a
+   * support instruction destroys a person's work, so this is explicitly the harmless
+   * half — sources, datasets, dictionaries and the trace log all survive it.
+   *
+   * The serving token does not. A reset that leaves a working credential behind is not
+   * one, and anything holding the old token should be made to fail rather than keep
+   * quietly working.
+   */
+  async resetSettings(): Promise<void> {
+    await this.catalog.clearSettings();
+    await this.ports.secrets.delete(SERVING_TOKEN_KEY);
+  }
+
   async queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]> {
     return runTraceQuery(this.engine, query);
   }
