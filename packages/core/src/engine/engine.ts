@@ -54,12 +54,16 @@ export class Engine {
   static async open(options: EngineOpenOptions): Promise<Engine> {
     const config: Record<string, string> = {
       // Nothing is fetched at query time. See engine/extensions.ts for why.
+      // extraConfig first, so the settings below are a floor rather than a default.
+      // Spread last, it could switch autoinstall back on and quietly undo §1.6 — no caller
+      // does that today, which is exactly the kind of thing that changes without anyone
+      // deciding to.
+      ...(options.extraConfig ?? {}),
       autoinstall_known_extensions: 'false',
       autoload_known_extensions: 'false',
       ...(options.extensionDirectory !== undefined
         ? { extension_directory: options.extensionDirectory }
         : {}),
-      ...(options.extraConfig ?? {}),
     };
 
     let handle: DuckDBHandlePort;

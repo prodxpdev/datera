@@ -11,6 +11,10 @@ const KEY_SHAPES: readonly RegExp[] = [
   /\bsk-ant-[A-Za-z0-9_-]{8,}/g,
   /\b(api[-_]?key|authorization|x-api-key)\s*[:=]\s*["']?[A-Za-z0-9_\-.]{8,}["']?/gi,
   /\bBearer\s+[A-Za-z0-9_\-.]{8,}/gi,
+  // A connection string with credentials in it, in either spelling. Neither was matched
+  // before, so a Postgres error quoting its DSN put the password in the trace log.
+  /\b(postgres(?:ql)?|mysql|mongodb):\/\/[^\s:@/]+:[^\s@]+@/gi,
+  /\bpassword\s*=\s*[^\s;'"]+/gi,
 ];
 
 export function redactSecrets(text: string, ...known: readonly (string | null | undefined)[]): string {

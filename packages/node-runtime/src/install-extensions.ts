@@ -91,19 +91,29 @@ export async function installExtensions(
 }
 
 /** Anything already downloaded means first run is done; DuckDB skips what it has. */
+/**
+ * Whether every required extension is present — not whether any one is.
+ *
+ * The check returned true on the first `.duckdb_extension` found anywhere. So if the
+ * network wobbled after `excel` installed and `sqlite_scanner` did not, every later launch
+ * short-circuited here and the missing ones were never retried: a permanent
+ * EXTENSION_UNAVAILABLE with no recovery short of deleting the directory by hand.
+ */
 function hasExtensions(directory: string): boolean {
   if (!existsSync(directory)) return false;
-  return findExtension(directory, 0);
+  const present = installedNames(directory, 0, new Set<string>());
+  return REQUIRED.every((name) => present.has(name));
 }
 
-function findExtension(directory: string, depth: number): boolean {
-  if (depth > 3) return false;
+/** The extension names present under `directory`, by filename. */
+function installedNames(directory: string, depth: number, found: Set<string>): Set<string> {
+  if (depth > 3) return found;
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {
-      if (findExtension(`${directory}/${entry.name}`, depth + 1)) return true;
+      installedNames(`${directory}/${entry.name}`, depth + 1, found);
     } else if (entry.name.endsWith('.duckdb_extension')) {
-      return true;
+      found.add(entry.name.replace(/\.duckdb_extension$/, ''));
     }
   }
-  return false;
+  return found;
 }

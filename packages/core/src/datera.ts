@@ -2654,9 +2654,20 @@ export class Datera {
     options: { origin: TraceOrigin; rowsReturned: number; ok: boolean; error?: string },
   ): Promise<void> {
     try {
+      // Every secret this workspace holds, not the two that were thought of first. A
+      // serving token written into a trace is a live credential inside a dataset the user
+      // can query; a database password reaches the log from any error that quotes a
+      // connection string, and redactCredentials only covers the attach path.
       const secrets: (string | null)[] = [];
       for (const provider of ['anthropic', 'openai']) {
         secrets.push(await this.ports.secrets.get(apiKeySecretName(provider)));
+      }
+      secrets.push(await this.ports.secrets.get(SERVING_TOKEN_KEY));
+      for (const source of await this.catalog.listSources()) {
+        const key = (source as { secretKey?: string | null }).secretKey;
+        if (typeof key === 'string' && key.length > 0) {
+          secrets.push(await this.ports.secrets.get(key));
+        }
       }
 
       await recordTrace(this.engine, trace, {

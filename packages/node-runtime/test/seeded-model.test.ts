@@ -21,6 +21,18 @@ import { NodeLocalLlm } from '@datera/node-runtime';
  */
 const spec = bundledModel(DEFAULT_BUNDLED_MODEL_ID);
 
+/**
+ * A stand-in for the weights, with a spec that matches it.
+ *
+ * The runtime verifies the checksum of a model every time it resolves one, not only on
+ * download — a same-size file is no longer taken on trust — so a fixture has to carry the
+ * digest of its own bytes rather than borrowing a real model's.
+ */
+function fixture(content: Buffer): { bytes: Buffer; spec: typeof spec } {
+  const sha256 = createHash('sha256').update(content).digest('hex');
+  return { bytes: content, spec: { ...spec, sizeBytes: content.length, sha256 } };
+}
+
 describe('seeded weights', () => {
   let writable: string;
   let seed: string;
@@ -36,9 +48,9 @@ describe('seeded weights', () => {
   });
 
   it('reports a seeded model as ready without anything being downloaded', async () => {
-    await writeFile(join(seed, spec.file), Buffer.alloc(spec.sizeBytes > 0 ? 8 : 0));
+    const { bytes, spec: tiny } = fixture(Buffer.alloc(8));
+    await writeFile(join(seed, tiny.file), bytes);
 
-    const tiny = { ...spec, sizeBytes: 8 };
     const llm = new NodeLocalLlm({ directory: writable, seedDirectory: seed, models: [tiny] });
 
     const status = (await llm.status()).find((s) => s.modelId === tiny.id);
@@ -46,8 +58,8 @@ describe('seeded weights', () => {
   });
 
   it('does not try to download one that is already seeded', async () => {
-    await writeFile(join(seed, spec.file), Buffer.alloc(8));
-    const tiny = { ...spec, sizeBytes: 8 };
+    const { bytes, spec: tiny } = fixture(Buffer.alloc(8));
+    await writeFile(join(seed, tiny.file), bytes);
 
     let attempted = false;
     const llm = new NodeLocalLlm({
@@ -67,8 +79,8 @@ describe('seeded weights', () => {
   it('leaves the seed alone rather than copying it into the writable directory', async () => {
     // An app bundle is read-only and a copy would double 2 GB of disk for no gain. The
     // seed is read in place.
-    await writeFile(join(seed, spec.file), Buffer.alloc(8));
-    const tiny = { ...spec, sizeBytes: 8 };
+    const { bytes, spec: tiny } = fixture(Buffer.alloc(8));
+    await writeFile(join(seed, tiny.file), bytes);
 
     await new NodeLocalLlm({ directory: writable, seedDirectory: seed, models: [tiny] }).ensure(tiny.id);
 
@@ -83,8 +95,15 @@ describe('seeded weights', () => {
     // (An earlier version of this test had the seed and the download be the *same* model
     // at the same size, which cannot happen — ensure() correctly does nothing when the
     // weights are already present, whichever directory they are in.)
-    const seededSpec = { ...spec, id: 'seeded-small', file: 'seeded-small.gguf', sizeBytes: 8 };
-    await writeFile(join(seed, seededSpec.file), Buffer.alloc(8));
+    const seededBytes = Buffer.alloc(8);
+    const seededSpec = {
+      ...spec,
+      id: 'seeded-small',
+      file: 'seeded-small.gguf',
+      sizeBytes: seededBytes.length,
+      sha256: createHash('sha256').update(seededBytes).digest('hex'),
+    };
+    await writeFile(join(seed, seededSpec.file), seededBytes);
 
     const body = Buffer.from('downloaded');
     const downloadedSpec = {
@@ -117,5 +136,19 @@ describe('seeded weights', () => {
   it('works with no seed directory at all, which is the normal build', async () => {
     const llm = new NodeLocalLlm({ directory: writable });
     expect((await llm.status()).every((s) => !s.ready)).toBe(true);
+  });
+
+  it('refuses a model whose bytes do not match its checksum', async () => {
+    // The finding this verification exists for: presence used to be decided by file size
+    // alone, and the digest was checked once on download and never again. So anything
+    // running as the user could swap in a same-size GGUF and have it mmap'd and executed
+    // on the next launch.
+    const { spec: tiny } = fixture(Buffer.alloc(8));
+    await writeFile(join(seed, tiny.file), Buffer.from('tampered'));
+
+    const llm = new NodeLocalLlm({ directory: writable, seedDirectory: seed, models: [tiny] });
+
+    const status = (await llm.status()).find((s) => s.modelId === tiny.id);
+    expect(status?.ready).toBe(false);
   });
 });
