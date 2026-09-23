@@ -45,6 +45,17 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 export async function serveHttp(options: HttpServeOptions): Promise<RunningServer> {
   const host = options.host ?? '127.0.0.1';
 
+  // An empty string was accepted as a token and then disabled authentication entirely,
+  // while the startup line still announced "token required". Refused outright: an operator
+  // who believes the socket is credentialed and is wrong is worse off than one with no
+  // token at all, who at least knows.
+  if (options.token !== undefined && options.token.length === 0) {
+    throw new Error(
+      'An empty token is not a token. Omit it to serve without authentication on loopback, ' +
+        'or set a real one.',
+    );
+  }
+
   if (!LOOPBACK.has(host) && (options.token === undefined || options.token.length === 0)) {
     throw new Error(
       `Refusing to listen on ${host} without a token. An unauthenticated data service ` +
@@ -72,12 +83,39 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
 
   const server: Server = createServer((req, res) => {
     void route(req, res).catch((e: unknown) => {
-      respond(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      const status = e instanceof BodyTooLarge ? 413 : 500;
+      respond(res, status, { error: e instanceof Error ? e.message : String(e) });
     });
   });
 
+  /**
+   * Refuse anything a browser sent on a page's behalf.
+   *
+   * Nothing checked Origin or Host, so a page the user happened to visit could POST to the
+   * loopback server. A cross-origin *simple* request needs no preflight, so the response
+   * being unreadable is no protection at all — /api/push and tools/call had already done
+   * their work by then. The Host check is the other half: it stops a DNS rebind from
+   * turning attacker.example into 127.0.0.1.
+   */
+  function fromABrowserElsewhere(req: IncomingMessage): boolean {
+    const origin = req.headers['origin'];
+    if (typeof origin === 'string' && origin.length > 0) return true;
+
+    const hostHeader = req.headers['host'];
+    if (typeof hostHeader === 'string') {
+      const name = hostHeader.replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+      if (!LOOPBACK.has(name)) return true;
+    }
+    return false;
+  }
+
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = req.url ?? '/';
+
+    if (fromABrowserElsewhere(req)) {
+      respond(res, 403, { error: 'This server answers local tools, not web pages.' });
+      return;
+    }
 
     // Liveness before auth: a health check that requires a credential is not a health
     // check, and §14.1 asks for /healthz and /readyz.
@@ -220,9 +258,29 @@ function authorised(req: IncomingMessage, token: string | undefined): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/**
+ * The largest request this will buffer.
+ *
+ * Generous enough for a pushed dataset, bounded because the alternative is that one request
+ * can exhaust the memory of a process that — on the desktop host — is holding the user's
+ * workspace open.
+ */
+const MAX_BODY_BYTES = 32 * 1024 * 1024;
+
+class BodyTooLarge extends Error {}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.from(chunk as Buffer));
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = Buffer.from(chunk as Buffer);
+    size += buf.length;
+    if (size > MAX_BODY_BYTES) {
+      req.destroy();
+      throw new BodyTooLarge(`Request body exceeds ${MAX_BODY_BYTES} bytes.`);
+    }
+    chunks.push(buf);
+  }
   return Buffer.concat(chunks).toString('utf8');
 }
 

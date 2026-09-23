@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
+import { connect } from 'node:net';
 import { handleRpc, parseArgs, serveHttp, serveStdio, type RunningServer } from '@datera/cli';
 import { fixturePaths, openTestWorkspace, testPorts, type FixturePaths, type TestWorkspace } from '@datera/testkit';
 
@@ -237,6 +238,68 @@ describe('§8 HTTP transport', () => {
     ]);
     expect(raced).toBe('closed');
     server = null;
+  });
+
+  it('refuses an empty token rather than silently serving without one', async () => {
+    // `--token ""` was accepted as a token: auth then returned true for everyone, while the
+    // startup line printed "token required". An operator who believed the socket was
+    // credentialed was wrong, and on loopback that is browser-reachable.
+    await expect(
+      serveHttp({ datera: ws.datera, info: INFO, port: 0, token: '', log: () => {} }),
+    ).rejects.toThrow(/token/i);
+  });
+
+  it('rejects a cross-origin request, so a web page cannot drive it', async () => {
+    // No Origin check meant any page the user visited could POST to the loopback server.
+    // A simple request needs no preflight, so the response being unreadable does not help:
+    // the state change has already happened.
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    const response = await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a request whose Host is not loopback, so DNS rebinding fails', async () => {
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    // Raw socket, not fetch: Host is a forbidden header name, so fetch silently drops an
+    // override and the test would assert nothing at all.
+    const status = await new Promise<number>((resolve, reject) => {
+      const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+      const socket = connect(server!.port, '127.0.0.1', () => {
+        socket.write(
+          `POST /mcp HTTP/1.1\r\nHost: attacker.example\r\n` +
+            `Content-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n` +
+            `Connection: close\r\n\r\n${body}`,
+        );
+      });
+      let text = '';
+      socket.on('data', (d: Buffer) => { text += String(d); });
+      socket.on('error', reject);
+      socket.on('end', () => {
+        const code = /^HTTP\/1\.1 (\d+)/.exec(text)?.[1];
+        resolve(Number(code ?? 0));
+      });
+    });
+
+    expect(status).toBe(403);
+  });
+
+  it('refuses a body large enough to exhaust memory', async () => {
+    // Unbounded buffering on a socket the desktop app opens while holding the workspace.
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    const response = await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'x'.repeat(40 * 1024 * 1024),
+    }).catch(() => ({ status: 413 }) as Response);
+
+    expect(response.status).toBe(413);
   });
 
   it('answers health checks without a credential', async () => {

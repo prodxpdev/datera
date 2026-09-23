@@ -24,6 +24,10 @@ jobs:
   package:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # This job holds the signing identity. It has no reason to be able to write to the
+    # repository, and the release job below asks for what it needs separately.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -216,6 +220,22 @@ jobs:
             xcrun stapler validate "$dmg"
             spctl -a -vvv -t open --context context:primary-signature "$dmg"
           done
+
+      # Put the signing material beyond reach the moment it is no longer needed.
+      #
+      # The keychain was left unlocked and as the user default, and $APPLE_API_KEY pointed
+      # at the notarization key on disk, for every step that followed — including
+      # electron-builder running the whole transitive dependency tree and a smoke test that
+      # launches the packaged application. Any code in there could sign binaries with the
+      # Developer ID or read the key. Nothing after this point needs either.
+      - name: Put the signing material away
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY=" >> "$GITHUB_ENV"
+          security list-keychain -d user -s login.keychain-db || true
+          security lock-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
 
       - name: Assert the native binding shipped, for the right architecture
         shell: bash

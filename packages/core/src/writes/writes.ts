@@ -1,4 +1,5 @@
 import { DateraError } from '../errors.js';
+import { maskIdentifiersKept, maskLiterals } from '../engine/scan-sql.js';
 import type { Engine } from '../engine/engine.js';
 import { qualified, quoteIdent } from '../engine/sql.js';
 import type { DuckDBConnectionPort, StatementKind } from '../ports/duckdb.js';
@@ -297,6 +298,8 @@ export async function restore(options: {
  * classified by DuckDB's parser, so the shape is known; this only has to find the name.
  */
 function extractTargetTable(sql: string, kind: WriteKind): string {
+  // Quoted names are matched on the original, since the mask blanks their contents — but
+  // the keyword search happens on the mask so an UPDATE inside a comment cannot win.
   const patterns: Record<WriteKind, RegExp> = {
     UPDATE: /\bUPDATE\s+(?:"([^"]+)"|([A-Za-z_][\w$]*))/i,
     DELETE: /\bDELETE\s+FROM\s+(?:"([^"]+)"|([A-Za-z_][\w$]*))/i,
@@ -312,25 +315,48 @@ function extractTargetTable(sql: string, kind: WriteKind): string {
 }
 
 function extractWhere(sql: string): string | null {
-  const match = /\bWHERE\b([\s\S]*?)(\bRETURNING\b|$)/i.exec(sql);
-  const body = match?.[1]?.trim();
-  return body === undefined || body.length === 0 ? null : body;
+  // Searched against the mask, sliced out of the original. A WHERE inside a string literal
+  // is not a WHERE clause, and reading it as one let a full-table UPDATE preview itself as
+  // matching nothing.
+  const masked = maskLiterals(sql);
+  const match = /\bWHERE\b([\s\S]*?)(\bRETURNING\b|$)/i.exec(masked);
+  if (match?.index === undefined) return null;
+
+  const start = match.index + match[0].toUpperCase().indexOf('WHERE') + 'WHERE'.length;
+  const end = match[2] !== undefined && match[2].length > 0
+    ? match.index + match[0].length - match[2].length
+    : match.index + match[0].length;
+
+  const body = sql.slice(start, end).trim();
+  return body.length === 0 ? null : body;
 }
 
 /** `SET a = expr, b = expr` → the column names and their expressions. */
 function extractAssignments(sql: string): readonly { column: string; expression: string }[] {
-  const match = /\bSET\b([\s\S]*?)(\bWHERE\b|\bRETURNING\b|$)/i.exec(sql);
-  const body = match?.[1];
-  if (body === undefined) return [];
+  const masked = maskLiterals(sql);
+  const match = /\bSET\b([\s\S]*?)(\bWHERE\b|\bRETURNING\b|$)/i.exec(masked);
+  if (match?.index === undefined) return [];
+
+  const start = match.index + match[0].toUpperCase().indexOf('SET') + 'SET'.length;
+  const end = match[2] !== undefined && match[2].length > 0
+    ? match.index + match[0].length - match[2].length
+    : match.index + match[0].length;
+
+  const body = sql.slice(start, end);
+  // The mask again for the split: a comma or a bracket inside a value is data. Without
+  // this, "Smith, John" split the assignment list into invalid SQL.
+  const maskedBody = masked.slice(start, end);
 
   const out: { column: string; expression: string }[] = [];
   let depth = 0;
   let current = '';
 
-  for (const char of body) {
-    if (char === '(') depth += 1;
-    if (char === ')') depth -= 1;
-    if (char === ',' && depth === 0) {
+  for (let i = 0; i < body.length; i += 1) {
+    const char = body[i] as string;
+    const structural = maskedBody[i];
+    if (structural === '(') depth += 1;
+    if (structural === ')') depth -= 1;
+    if (structural === ',' && depth === 0) {
       out.push(...parseAssignment(current));
       current = '';
       continue;
@@ -358,11 +384,23 @@ export async function assertWriteInDataset(
 ): Promise<void> {
   // The AST path only works for SELECT, so the check here is over the statement text.
   // A qualified name that is not the active schema is refused.
+  //
+  // Two bugs lived in the previous version of this. It scanned the raw text, so a value
+  // containing a dot — an email address, a hostname — tripped a false refusal; and it only
+  // matched bare identifiers, so `UPDATE "ds_other"."customers"` walked straight past the
+  // one guard standing between a proposed write and another dataset. Both are the same
+  // mistake: reading the statement without knowing which parts are data.
+  //
+  // Quoted and bare spellings are both matched now, against a mask where literals and
+  // comments are blank but identifier *quotes* are preserved.
   void (await extractTableReferences(conn, sql));
 
-  const qualifiedNames = [...sql.matchAll(/\b([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)/g)];
+  const masked = maskIdentifiersKept(sql);
+  const qualifiedNames = [
+    ...masked.matchAll(/(?:"([^"]+)"|\b([A-Za-z_][\w$]*))\s*\.\s*(?:"[^"]+"|[A-Za-z_][\w$]*)/g),
+  ];
   const offending = qualifiedNames
-    .map((m) => m[1] as string)
+    .map((m) => (m[1] ?? m[2]) as string)
     .filter((schema) => schema.toLowerCase() !== activeSchema.toLowerCase());
 
   if (offending.length > 0) {

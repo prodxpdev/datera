@@ -56,6 +56,9 @@ export interface NodeLocalLlmOptions {
 type LlamaModule = typeof LlamaCppModule;
 
 export class NodeLocalLlm implements LocalLlmPort {
+  /** path:size:mtime → verified digest, so a 4GB file is hashed once per change. */
+  private readonly verified = new Map<string, string>();
+
   private llama: Awaited<ReturnType<LlamaModule['getLlama']>> | null = null;
   private loaded: { modelId: string; model: unknown; context: unknown } | null = null;
   private embedder: { modelId: string; model: unknown; context: unknown } | null = null;
@@ -304,13 +307,47 @@ export class NodeLocalLlm implements LocalLlmPort {
    */
   private async resolvePath(spec: BundledModelSpec): Promise<string | null> {
     const downloaded = this.pathFor(spec.file);
-    if (((await stat(downloaded).catch(() => null))?.size ?? 0) === spec.sizeBytes) return downloaded;
+    if (await this.looksRight(downloaded, spec)) return downloaded;
 
     const seedDirectory = this.options.seedDirectory;
     if (seedDirectory === undefined) return null;
 
     const seeded = join(seedDirectory, spec.file);
-    return ((await stat(seeded).catch(() => null))?.size ?? 0) === spec.sizeBytes ? seeded : null;
+    return (await this.looksRight(seeded, spec)) ? seeded : null;
+  }
+
+  /**
+   * Whether the file at `path` is the model it claims to be.
+   *
+   * Size alone was the whole check, and the checksum was verified exactly once — on the
+   * download path, never again. So any process running as the user could overwrite a
+   * model with a same-size file of its own and it would be mmap'd and executed by
+   * llama.cpp on next launch, with nothing noticing. A GGUF is a parsed binary format fed
+   * to a native addon; "wrong weights" is the mild reading of that.
+   *
+   * The digest is cached by path, size and mtime, so the cost is one hash per file per
+   * change rather than one per launch — a 4GB model takes a couple of seconds, which is
+   * worth paying once and not worth paying every time.
+   */
+  private async looksRight(path: string, spec: BundledModelSpec): Promise<boolean> {
+    const info = await stat(path).catch(() => null);
+    if (info === null || info.size !== spec.sizeBytes) return false;
+
+    const stamp = `${path}:${info.size}:${info.mtimeMs}`;
+    if (this.verified.get(stamp) === spec.sha256) return true;
+
+    const digest = await sha256File(path);
+    if (digest !== spec.sha256) {
+      // No logger port here, and stderr is the right place: this is a security-relevant
+      // refusal that should be visible whichever host is running.
+      process.stderr.write(
+        `[datera] the model at ${path} does not match its published checksum and will not be used\n`,
+      );
+      return false;
+    }
+
+    this.verified.set(stamp, digest);
+    return true;
   }
 
   private async getLlama(): Promise<Awaited<ReturnType<LlamaModule['getLlama']>>> {

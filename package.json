@@ -15,7 +15,7 @@
     "fixtures": "pnpm -w exec tsc -b && node packages/testkit/dist/make-fixtures.js",
     "desktop": "pnpm --filter @datera/desktop dev",
     "stage-extensions": "node scripts/stage-extensions.mjs",
-    "postinstall": "node scripts/stage-extensions.mjs || echo \"extension staging skipped\"",
+    "postinstall": "node scripts/stage-extensions.mjs",
     "try": "tsc -b && node scripts/try-core.mjs"
   },
   "devDependencies": {
