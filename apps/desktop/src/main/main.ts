@@ -17,7 +17,7 @@ import {
   NodeLocalLlm,
   nodeDuckDBDriver,
   resolveExtensionDirectory,
-  unpackExtensions,
+  installExtensions,
 } from '@datera/node-runtime';
 import { IPC, type SerialisedError } from '../shared/contract.js';
 import { SafeStorageSecretStore, secretStorePath } from './secret-store.js';
@@ -71,6 +71,17 @@ function defaultWorkspacePath(): string {
   return join(app.getPath('userData'), 'workspaces', 'default');
 }
 
+/**
+ * Where a packaged build keeps its DuckDB extensions.
+ *
+ * Its own data directory, not the app bundle: they cannot be signed, and anything
+ * unsignable inside the bundle makes the whole app un-notarizable. See
+ * install-extensions.ts.
+ */
+function packagedExtensionDirectory(): string {
+  return join(app.getPath('userData'), 'duckdb-extensions');
+}
+
 async function openCore(): Promise<Datera> {
   const workspacePath = defaultWorkspacePath();
   return Datera.open({
@@ -102,10 +113,7 @@ async function openCore(): Promise<Datera> {
     // Getting this wrong in a packaged build is silent — xlsx and SQLite simply stop
     // working — so the packaged smoke test asserts both extensions actually load.
     extensionDirectory: app.isPackaged
-      ? unpackExtensions(
-          join(process.resourcesPath, 'extensions-packed'),
-          join(app.getPath('userData'), 'duckdb-extensions'),
-        )
+      ? packagedExtensionDirectory()
       : resolveExtensionDirectory(appRoot),
     appVersion: app.getVersion(),
   });
@@ -472,6 +480,24 @@ app.whenReady().then(async () => {
 
   installApplicationMenu();
   registerHandlers();
+
+  // Fetched once, before the engine opens, so a first launch has them and every launch
+  // after this costs a directory check. Never fatal: an app that will not start because a
+  // spreadsheet reader could not be downloaded is worse than one that starts and says so.
+  if (app.isPackaged) {
+    try {
+      const result = await installExtensions(packagedExtensionDirectory(), {
+        onProgress: (name) => console.log(`[datera] fetching extension: ${name}`),
+      });
+      if (result.failed.length > 0) {
+        console.error(
+          `[datera] could not fetch: ${result.failed.map((f) => `${f.name} (${f.reason})`).join(', ')}`,
+        );
+      }
+    } catch (e) {
+      console.error('[datera] extension setup failed', e);
+    }
+  }
 
   try {
     datera = await openCore();
