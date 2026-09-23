@@ -190,6 +190,22 @@ export interface QueryResult {
 const CHAT_MODEL_SETTING = 'model.chat';
 const EMBEDDING_MODEL_SETTING = 'model.embedding';
 const TRACE_PAYLOADS_SETTING = 'trace.capturePayloads';
+/**
+ * A table name that may safely become a filename inside the push inbox.
+ *
+ * Letters, digits and underscores, starting with a letter or underscore — the same shape a
+ * SQL identifier has, which is what this becomes moments later.
+ */
+function assertPushTableName(name: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.length > 128) {
+    throw new DateraError(
+      'INVALID_ARGUMENT',
+      `"${name}" is not a usable table name. Letters, digits and underscores only.`,
+      { name },
+    );
+  }
+}
+
 const TRACE_RETENTION_SETTING = 'trace.retention';
 const ENVIRONMENTS_SETTING = 'environments';
 const LIFECYCLE_SETTING = 'teaching.lifecycle';
@@ -2887,6 +2903,7 @@ export class Datera {
     return { ok: true, environment: environmentId };
   }
 
+
   /**
    * Accept a pushed dataset. Called by a host that has chosen to allow pushes.
    *
@@ -2923,6 +2940,17 @@ export class Datera {
 
     const created: string[] = [];
     for (const table of tables) {
+      // The name arrives over the wire and becomes a filename. joinPath is a deliberately
+      // minimal string join — the core must stay loadable in a browser host, so it cannot
+      // use node:path — and it does not normalise `..`, while the filesystem port creates
+      // missing parents before writing. So `../../../../etc/whatever` wrote attacker
+      // content to an arbitrary path as the serving user.
+      //
+      // Checked against the shape a table name may actually have rather than by stripping
+      // dangerous sequences: a denylist of traversal spellings is a game you lose, and
+      // anything not matching this was never a usable table name anyway.
+      assertPushTableName(table.name);
+
       const staged = joinPath(inbox, `${table.name}.csv`);
       await this.ports.fs.writeTextFile(staged, table.csv);
 
