@@ -3,8 +3,8 @@ import {
   ACTIVITY_DATASET_ID, DEFAULT_DATASET_ID,
 } from '@datera/core';
 import {
-  fixturePaths, openTestWorkspace, testPorts,
-  type FixturePaths, type TestWorkspace,
+  fixturePaths, openTestWorkspace, startStubModelServer, testPorts,
+  type FixturePaths, type StubModelServer, type TestWorkspace,
 } from '@datera/testkit';
 
 /**
@@ -112,5 +112,72 @@ describe('the activity log dataset', () => {
 
     const after = await ws.datera.query(ACTIVITY_DATASET_ID, 'SELECT count(*) AS n FROM requests');
     expect(Number(after.rows[0]?.[0])).toBeGreaterThan(Number(before.rows[0]?.[0]));
+  });
+});
+
+/**
+ * The other half of §12.9a: searchable by NL, *with the SQL shown*.
+ *
+ * SQL over the log has worked since it became a dataset. Asking in words had never been
+ * exercised against it, and the requirement is explicit that both work — the whole point
+ * being that someone who cannot write SQL can still audit what Datera did, and still sees
+ * the statement that produced the answer rather than being asked to trust it.
+ */
+describe('asking the activity log in words', () => {
+  let ws: TestWorkspace;
+  let fixtures: FixturePaths;
+  let server: StubModelServer;
+
+  beforeEach(async () => {
+    fixtures = fixturePaths(process.env['DATERA_FIXTURES'] as string);
+    server = await startStubModelServer();
+    ws = await openTestWorkspace({ ports: testPorts({ http: true }) });
+    await ws.datera.addSource({ type: 'file', path: fixtures.ordersCsv, name: 'orders' });
+    await ws.datera.setChatModel({
+      tier: 'detected', provider: 'ollama', id: 'llama3.1:8b', role: 'chat',
+      locality: 'local', endpoint: server.url, label: 'llama3.1:8b',
+    });
+
+    server.setReply('SELECT count(*) FROM orders');
+    await ws.datera.ask(DEFAULT_DATASET_ID, 'how many orders');
+  });
+
+  afterEach(async () => {
+    await ws.dispose();
+    await server.close();
+  });
+
+  it('answers a question about the log, and shows the SQL it ran', async () => {
+    server.setReply('SELECT question, total_ms FROM requests ORDER BY total_ms DESC LIMIT 3');
+    const result = await ws.datera.ask(ACTIVITY_DATASET_ID, 'which requests were slowest?');
+
+    // "With the SQL shown" is the part that makes this auditable rather than another
+    // opaque answer about an opaque system.
+    expect(result.sql).toContain('FROM requests');
+    expect(result.rows.length).toBeGreaterThan(0);
+  });
+
+  it('gives the model the log schema, so it can write that SQL at all', async () => {
+    server.setReply('SELECT count(*) AS n FROM requests');
+    await ws.datera.ask(ACTIVITY_DATASET_ID, 'how many requests');
+
+    const sent = server.requests.at(-1)?.body ?? '';
+    expect(sent).toContain('requests');
+    expect(sent).toContain('total_ms');
+  });
+
+  it('refuses a write the model proposes against the log, like any other read path', async () => {
+    server.setReply('DELETE FROM requests');
+    const result = await ws.datera.ask(ACTIVITY_DATASET_ID, 'clear the log');
+
+    // Ask surfaces a refusal rather than throwing — the trace still records what the
+    // model proposed, which is the point of showing the work. What must not happen is it
+    // running: no SQL, no rows, and the statement visible in the trace as a proposal.
+    expect(result.answerable).toBe(false);
+    expect(result.sql).toBeNull();
+    expect(result.rows).toEqual([]);
+
+    const after = await ws.datera.query(ACTIVITY_DATASET_ID, 'SELECT count(*) AS n FROM requests');
+    expect(Number(after.rows[0]?.[0])).toBeGreaterThan(0);
   });
 });

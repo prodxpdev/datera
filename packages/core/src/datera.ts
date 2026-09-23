@@ -1231,13 +1231,17 @@ export class Datera {
     const dataset = await this.getDataset(datasetId);
     const model = await this.chatModel();
 
+    // Deliberately the same schema the served `describe_schema` sees. This built its own
+    // list from sources alone, so a dataset whose tables have no source behind them — the
+    // activity log, an authored table (§3a) — handed the model nothing, and asking it a
+    // question in words failed while SQL over it worked.
+    const schemas = await this.datasetSchemas(datasetId, dataset.schemaName);
+
     const sources = (await this.listSources()).filter(
       (s) => s.datasetId === datasetId && s.status.availability === 'available',
     );
-    const schemas: SourceSchema[] = [];
     const dictionaries: SourceDictionary[] = [];
     for (const source of sources) {
-      schemas.push(await introspectSource(this.engine, source, dataset.schemaName));
       dictionaries.push(await this.getDictionary(source.id));
     }
 
@@ -1515,6 +1519,22 @@ export class Datera {
     const schemas: SourceSchema[] = [];
     for (const source of sources) {
       schemas.push(await introspectSource(this.engine, source, schemaName));
+    }
+    if (schemas.length > 0) return schemas;
+
+    // A dataset with no sources still has tables — the activity log is a view over the
+    // trace log, and an authored table (§3a) has no source behind it either. Deriving the
+    // schema only from sources meant the model was handed nothing and could not write SQL
+    // at all, so asking the log a question in words failed while SQL over it worked. §12.9a
+    // asks for both.
+    const relations = await this.engine.executeInternal(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name`,
+      [schemaName],
+    );
+    for (const row of relations.rows) {
+      schemas.push(
+        await introspectRelation(this.engine, schemaName, String(row[0]), datasetId),
+      );
     }
     return schemas;
   }

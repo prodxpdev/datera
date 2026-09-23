@@ -140,6 +140,31 @@ describe('Ask and the transparency drawer', () => {
     expect(Math.max(...widths)).toBeGreaterThan(Math.min(...widths));
   });
 
+  it('can step through the request hop by hop, the way the prototype did', async () => {
+    // The trace arrives complete, which is right — but watching it travel is what made
+    // the prototype's version legible to someone who does not already know the pipeline.
+    // Deterministic to assert because the reveal count is state, not an animation frame:
+    // clicking sets it to 1 synchronously, and it grows to the full set.
+    await page.waitForSelector('[data-traceflow]', { timeout: 10_000 });
+
+    // Only the stage hops: the "Back to you" node is the arrival, not a hop, and it is
+    // deliberately held back until the request has actually got there.
+    const total = await page.$$eval('[data-traceflow] .tfhop[data-hop]', (els) => els.length);
+    expect(total).toBeGreaterThan(3);
+
+    await page.click('[data-trace-replay]');
+    expect(await page.getAttribute('[data-traceflow]', 'data-revealed')).toBe('1');
+
+    // Ends complete — a step-through that could strand the trace half-shown would be
+    // worse than not having one.
+    await expect
+      .poll(async () => page.getAttribute('[data-traceflow]', 'data-revealed'), { timeout: 30_000 })
+      .toBe(String(total));
+
+    // And the arrival is back once it has finished.
+    expect(await page.textContent('[data-traceflow]')).toMatch(/Back to you/);
+  });
+
   it('shows every stage of the pipeline in order', async () => {
     const stages = await page.$$eval('.stage .sl', (els) => els.map((e) => e.textContent ?? ''));
     expect(stages.length).toBeGreaterThanOrEqual(6);

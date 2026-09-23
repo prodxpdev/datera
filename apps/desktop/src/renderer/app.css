@@ -266,6 +266,12 @@
 
 /* --------------------------------------------------------------- serve */
 .serve { min-width: 0; }
+/* Asking the log sits with the filters, not in a separate pane: it is another way to
+   narrow the same list, and §8a is explicit that the log must not grow its own UI. */
+.logask { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.logask input[type="text"] { flex: 1 1 320px; min-width: 0; font-size: 12.5px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.loganswer { margin: 10px 0 14px; }
+.loganswer .sqlblock { margin: 6px 0 8px; }
 /* The serving switch reads as a decision, not a preference: it is the one control here
    that opens a socket. */
 .servetoggle { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }

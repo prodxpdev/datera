@@ -83,10 +83,14 @@
     "linux": {
       "icon": "build/icon.png",
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Development",
-      "executableName": "datera"
+      "executableName": "datera",
+      "maintainer": "Datera <support@prodxp.com>",
+      "synopsis": "Make your own data queryable, understandable and shareable",
+      "description": "Datera is a local-first, bring-your-own-key desktop tool for making the data you already have queryable in plain language, with every answer showing the SQL it ran and every step it took."
     },
     "asarUnpack": [
       "**/*.node",

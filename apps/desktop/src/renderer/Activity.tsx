@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Dataset, ToolDefinition, TraceRecord } from '@datera/core';
+import { ACTIVITY_DATASET_ID, type AskResult, type Dataset, type ToolDefinition, type TraceRecord } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 import { Operations } from './Operations.js';
 import { TraceFlow } from './TraceFlow.js';
@@ -32,6 +32,10 @@ export function Activity({
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [minMs, setMinMs] = useState(0);
   const [selected, setSelected] = useState<TraceRecord | null>(null);
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<AskResult | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setTools(await api.listTools());
@@ -41,6 +45,28 @@ export function Activity({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /**
+   * Ask the log a question in words (§12.9a).
+   *
+   * The same `ask` every other dataset uses — the log is a dataset, so there is no second
+   * NL stack here, and the SQL it produced is shown rather than summarised. An answer
+   * about what Datera did that you had to take on faith would undercut the reason the log
+   * exists at all.
+   */
+  const askLog = useCallback(async () => {
+    if (question.trim().length === 0) return;
+    setAsking(true);
+    setAskError(null);
+    try {
+      setAnswer(await api.ask(ACTIVITY_DATASET_ID, question));
+    } catch (e) {
+      setAnswer(null);
+      setAskError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAsking(false);
+    }
+  }, [api, question]);
 
   return (
     <div className="serve">
@@ -109,6 +135,62 @@ export function Activity({
             <button className="btn" onClick={() => void refresh()}>Refresh</button>
             <span className="logpolicyhint">Retention and payload capture live in Settings → Privacy.</span>
           </div>
+
+          <div className="logask">
+            <input
+              data-log-ask
+              type="text"
+              placeholder="Ask the log a question — which requests were slowest? what did agents call today?"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void askLog();
+              }}
+            />
+            <button className="btn" data-log-ask-go disabled={asking} onClick={() => void askLog()}>
+              {asking ? 'Asking…' : 'Ask'}
+            </button>
+            <span className="logpolicyhint">
+              Or open <b>Activity</b> in Query and write the SQL yourself.
+            </span>
+          </div>
+
+          {askError !== null && <div className="err">{askError}</div>}
+
+          {answer !== null && (
+            <div className="loganswer">
+              {answer.sql === null ? (
+                // A refusal is shown as a refusal. The alternative — an empty result table —
+                // reads as "nothing matched", which is a different and misleading claim.
+                <div className="warn">
+                  <b>Datera could not answer that from the log.</b>
+                  {answer.flag !== null && <div>{answer.flag}</div>}
+                </div>
+              ) : (
+                <>
+                  <div className="tierdesc">
+                    <b>Here is the SQL that ran</b> — the answer is whatever this returned,
+                    nothing more.
+                  </div>
+                  <pre className="sqlblock" data-log-ask-sql>{answer.sql}</pre>
+                  <div className="logtable" data-log-ask-rows>
+                    <table>
+                      <thead>
+                        <tr>{answer.columns.map((c) => <th key={c.name}>{c.name}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {answer.rows.map((row, i) => (
+                          <tr key={i}>
+                            {row.map((cell, j) => <td key={j}>{cell === null ? '—' : String(cell)}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <p className="tierdesc">
             Every request Datera has answered — here, over the API, and from an agent.
