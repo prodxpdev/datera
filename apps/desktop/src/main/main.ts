@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell } from 'electron';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   API_ENDPOINTS,
   Datera,
@@ -410,9 +410,53 @@ function createWindow(): void {
     },
   });
 
+  lockWindowDown(window);
+
   void window.loadFile(join(distRoot, 'renderer', 'index.html'));
   window.on('closed', () => {
     window = null;
+  });
+}
+
+/**
+ * Keep the window on the application, and nowhere else.
+ *
+ * contextIsolation, sandbox and nodeIntegration:false protect the renderer from Node. They
+ * do nothing about the renderer being pointed at a *different document* — and a preload
+ * script is attached per webContents, so it survives navigation. Send the window to an
+ * attacker's HTML file and that file receives `window.dateraBridge` with the whole surface
+ * on it: arbitrary file read through addSource, arbitrary SQL against the workspace, and
+ * the serving token.
+ *
+ * No exploit of the renderer is needed to get there. Chromium's default response to a file
+ * dropped onto a page is to navigate the frame to it, so "take a look at this report" was
+ * the entire attack.
+ */
+function lockWindowDown(target: BrowserWindow): void {
+  const appPage = pathToFileURL(join(distRoot, 'renderer', 'index.html')).href;
+
+  // Nothing opens a second window. Links that should reach a browser go through
+  // shell.openExternal deliberately, in one place, with a literal URL.
+  target.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  target.webContents.on('will-navigate', (event, url) => {
+    // Compared without the query or hash, so in-app routing still works while a different
+    // document never loads.
+    if (url.split('#')[0]?.split('?')[0] !== appPage) {
+      event.preventDefault();
+      console.warn(`[datera] blocked navigation to ${url}`);
+    }
+  });
+
+  // Belt and braces: a frame that somehow does attach is not given the bridge.
+  target.webContents.on('will-attach-webview', (event) => {
+    event.preventDefault();
+  });
+
+  // The renderer never asks for a camera, a microphone or a location, so nothing should be
+  // able to ask on its behalf either.
+  target.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
   });
 }
 
