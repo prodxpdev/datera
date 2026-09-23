@@ -55,6 +55,18 @@ import type {
  * the UI is coupled to this interface rather than to in-process calls. Hence the
  * Promise-returning shape everywhere, including for things that are synchronous today.
  */
+/** What the host's listener is actually doing right now. */
+export interface ServingStatus {
+  readonly running: boolean;
+  readonly port: number;
+  /** Present only while running. */
+  readonly url?: string | undefined;
+  /** Present only while running — the renderer shows it so it can be pasted. */
+  readonly token?: string | undefined;
+  /** Why it is not running, when it should be. */
+  readonly error?: string | undefined;
+}
+
 export interface DateraApi {
   engineInfo(): Promise<EngineInfo>;
   listDatasets(): Promise<readonly Dataset[]>;
@@ -114,6 +126,18 @@ export interface DateraApi {
   ): Promise<OperationResult>;
   callTool(name: string, args: Record<string, unknown>): Promise<ToolResult>;
   connectConfig(client: ClientId, options?: { url?: string; token?: string }): Promise<ConnectConfig>;
+
+  /**
+   * Serve this workspace to an agent while the app is open.
+   *
+   * DuckDB allows one writer, so `datera --mcp` against the workspace the app is holding
+   * fails on the lock. The app hosting the listener is what makes an agent and the app
+   * usable at the same time, on the data the user is actually looking at.
+   */
+  servingStatus(): Promise<ServingStatus>;
+  startServing(port?: number): Promise<ServingStatus>;
+  stopServing(): Promise<ServingStatus>;
+  rotateServingToken(): Promise<ServingStatus>;
   queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]>;
   getTraceRetention(): Promise<RetentionPolicy>;
   setTraceRetention(policy: Partial<RetentionPolicy>): Promise<RetentionPolicy>;
@@ -212,6 +236,10 @@ export const IPC = {
   callOperation: 'datera:callOperation',
   callTool: 'datera:callTool',
   connectConfig: 'datera:connectConfig',
+  servingStatus: 'datera:servingStatus',
+  startServing: 'datera:startServing',
+  stopServing: 'datera:stopServing',
+  rotateServingToken: 'datera:rotateServingToken',
   queryTraceLog: 'datera:queryTraceLog',
   getTraceRetention: 'datera:getTraceRetention',
   setTraceRetention: 'datera:setTraceRetention',

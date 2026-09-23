@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ApiEndpoint, ClientId, ConnectConfig } from '@datera/core';
-import type { DateraApi } from '../shared/contract.js';
+import type { DateraApi, ServingStatus } from '../shared/contract.js';
 
 /**
  * How an agent connects, and what it can call (spec §8).
@@ -14,11 +14,39 @@ export function Connect({ api }: { readonly api: DateraApi }): JSX.Element {
   const [config, setConfig] = useState<ConnectConfig | null>(null);
   const [endpoints, setEndpoints] = useState<readonly ApiEndpoint[]>([]);
   const [showApi, setShowApi] = useState(false);
+  const [serving, setServing] = useState<ServingStatus | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    setConfig(await api.connectConfig(client));
+    const status = await api.servingStatus();
+    setServing(status);
+
+    // The config has to describe what is actually running. While the app is serving, an
+    // agent connects over HTTP to this process; the stdio config would tell it to launch
+    // a second one, which DuckDB refuses because this app holds the workspace.
+    setConfig(
+      await api.connectConfig(
+        client,
+        status.running && status.url !== undefined
+          ? { url: status.url, ...(status.token === undefined ? {} : { token: status.token }) }
+          : {},
+      ),
+    );
     setEndpoints(await api.apiEndpoints());
   }, [api, client]);
+
+  const act = useCallback(
+    async (fn: () => Promise<ServingStatus>) => {
+      setBusy(true);
+      try {
+        await fn();
+      } finally {
+        setBusy(false);
+        await refresh();
+      }
+    },
+    [refresh],
+  );
 
   useEffect(() => {
     void refresh();
@@ -26,10 +54,48 @@ export function Connect({ api }: { readonly api: DateraApi }): JSX.Element {
 
   return (
     <div className="serve">
-      <p className="tierdesc">
-        <b>stdio</b> launches Datera itself — no port, no token, nothing listening. That is the
-        better default for one person on one machine.
-      </p>
+      <div className="servetoggle">
+        <div>
+          <b>Serve this workspace</b>
+          <div className="tierdesc">
+            {serving?.running === true
+              ? 'An agent can reach this workspace while Datera is open. Every request it makes shows up in Activity.'
+              : 'Off. Datera is not listening, so an agent can only reach this workspace by launching its own copy — which it cannot do while this app is open, because the database allows one writer at a time.'}
+          </div>
+        </div>
+        <button
+          className="primary"
+          data-serving-toggle
+          disabled={busy || serving === null}
+          onClick={() =>
+            void act(() => (serving?.running === true ? api.stopServing() : api.startServing()))
+          }
+        >
+          {serving?.running === true ? 'Stop serving' : 'Start serving'}
+        </button>
+      </div>
+
+      {serving?.error !== undefined && (
+        <div className="warn" data-serving-error>
+          ● Could not serve: {serving.error}
+        </div>
+      )}
+
+      {serving?.running === true ? (
+        <p className="tierdesc" data-serving-on>
+          Listening on <span className="mono">{serving.url}</span> — loopback only, so nothing
+          beyond this machine can reach it, and a token is required. Keep the token secret; it
+          grants exactly the access this config names.{' '}
+          <button className="linkbtn" disabled={busy} onClick={() => void act(() => api.rotateServingToken())}>
+            rotate the token
+          </button>
+        </p>
+      ) : (
+        <p className="tierdesc">
+          <b>stdio</b> launches Datera itself — no port, no token, nothing listening. That is the
+          better default for one person on one machine, and it needs this app closed.
+        </p>
+      )}
 
       <div className="subnav">
         {(['claude-desktop', 'claude-code', 'cursor'] as const).map((c) => (

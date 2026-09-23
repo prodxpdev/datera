@@ -175,6 +175,8 @@ export { API_ENDPOINTS, apiEndpointsByGroup } from './serve/api-spec.js';
 export type { ApiEndpoint, ApiParameter } from './serve/api-spec.js';
 export type { TraceRecord, TraceQuery, RetentionPolicy, TraceOrigin } from './serve/trace-log.js';
 export { DEFAULT_RETENTION } from './serve/trace-log.js';
+export type { ServingPreference } from './serve/serving.js';
+export { DEFAULT_SERVING } from './serve/serving.js';
 export type { ToolResult } from './datera.js';
 
 // ------------------------------------------------- environments (§10, §12.10)

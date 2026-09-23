@@ -20,6 +20,7 @@ import {
   installExtensions,
 } from '@datera/node-runtime';
 import { IPC, type SerialisedError } from '../shared/contract.js';
+import { Serving } from './serving.js';
 import { SafeStorageSecretStore, secretStorePath } from './secret-store.js';
 
 const here = resolve(fileURLToPath(import.meta.url), '..');
@@ -152,6 +153,12 @@ function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Pro
   });
 }
 
+const serving = new Serving(
+  () => core(),
+  app.getVersion(),
+  (message) => console.log(`[datera] ${message}`),
+);
+
 function core(): Datera {
   if (datera === null) throw new Error('The Datera engine is not open yet.');
   return datera;
@@ -214,6 +221,10 @@ function registerHandlers(): void {
   );
   handle(IPC.callTool, async (name: string, args: Record<string, unknown>) => core().callTool(name, args));
   handle(IPC.connectConfig, async (client: never, opts?: never) => core().connectConfig(client, opts ?? {}));
+  handle(IPC.servingStatus, async () => serving.status());
+  handle(IPC.startServing, async (port?: number) => serving.start(port));
+  handle(IPC.stopServing, async () => serving.stop());
+  handle(IPC.rotateServingToken, async () => serving.rotate());
   handle(IPC.queryTraceLog, async (query: never) => core().queryTraceLog(query ?? {}));
   handle(IPC.getTraceRetention, async () => core().getTraceRetention());
   handle(IPC.setTraceRetention, async (policy: never) => core().setTraceRetention(policy));
@@ -512,6 +523,10 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // Resume serving if this workspace was left served. Not awaited and never fatal: the
+  // app opening must not depend on a port being free.
+  void serving.resume().catch(() => undefined);
+
   // Load a selected bundled model in the background, so the first question is not the one
   // that pays for reading two gigabytes off disk. Deliberately after the window and not
   // awaited: the UI should be usable immediately, and a failure here costs only a slower
@@ -531,6 +546,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  void datera?.close();
-  datera = null;
+  // The listener goes down before the workspace does, so a request in flight cannot
+  // reach a closed engine.
+  void serving.shutdown().finally(() => {
+    void datera?.close();
+    datera = null;
+  });
 });

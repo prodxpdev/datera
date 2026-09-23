@@ -90,6 +90,13 @@ import {
   recordTrace, type RetentionPolicy, type TraceOrigin, type TraceQuery, type TraceRecord,
 } from './serve/trace-log.js';
 import {
+  generateServingToken,
+  parseServingPreference,
+  SERVING_SETTING,
+  SERVING_TOKEN_KEY,
+  type ServingPreference,
+} from './serve/serving.js';
+import {
   applyWrite, assertWriteInDataset, classifyWrite, grant as grantWriteIn, isGranted,
   migrateWrites, previewWrite, restore, revoke as revokeWriteIn,
   type AppliedWrite, type WriteProposal,
@@ -2519,6 +2526,53 @@ export class Datera {
     } catch {
       return DEFAULT_RETENTION;
     }
+  }
+
+  // ------------------------------------------------- serving this workspace (§8)
+
+  /**
+   * Whether an agent may reach this workspace, and on which port.
+   *
+   * The core keeps the decision and hands it to whichever host is capable of listening;
+   * it never opens a socket itself (§1.7). Off by default — a listening port is not
+   * something to acquire by installing an app.
+   */
+  async getServingPreference(): Promise<ServingPreference> {
+    return parseServingPreference(await this.catalog.getSetting(SERVING_SETTING));
+  }
+
+  async setServingPreference(preference: Partial<ServingPreference>): Promise<ServingPreference> {
+    const next = { ...(await this.getServingPreference()), ...preference };
+    await this.catalog.setSetting(SERVING_SETTING, JSON.stringify(next));
+    return next;
+  }
+
+  /**
+   * The token that guards the served socket, created on first use and then kept.
+   *
+   * Kept, rather than minted per start, because an agent's configuration names it: a
+   * token that changed on every launch would silently break every client that had been
+   * set up. It lives in the OS keychain like every other credential (D-06) — never in
+   * the workspace file, which travels wherever a copy of the data does.
+   */
+  async servingToken(): Promise<string> {
+    const existing = await this.ports.secrets.get(SERVING_TOKEN_KEY);
+    if (existing !== null && existing.length > 0) return existing;
+    return this.rotateServingToken();
+  }
+
+  async rotateServingToken(): Promise<string> {
+    if (!(await this.ports.secrets.isAvailable())) {
+      throw new DateraError(
+        'SECRET_STORE_UNAVAILABLE',
+        'There is nowhere protected to keep a serving token on this machine, so Datera ' +
+          'will not issue one. Writing it beside the data would send it wherever a copy ' +
+          'of the workspace goes.',
+      );
+    }
+    const token = generateServingToken();
+    await this.ports.secrets.set(SERVING_TOKEN_KEY, token);
+    return token;
   }
 
   async queryTraceLog(query: TraceQuery): Promise<readonly TraceRecord[]> {
