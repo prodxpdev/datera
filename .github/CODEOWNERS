@@ -1,0 +1,10 @@
+# Who must approve a change to this repository.
+#
+# Branch protection requires a code-owner review on every pull request into main. The
+# owner keeps admin bypass, so a solo maintainer is never locked out of their own project
+# — the rule is there to stop an unreviewed push landing by accident, not to make merging
+# a ceremony.
+#
+# Everything, for now. Narrow this as the list of maintainers grows: a blanket rule that
+# names one person stops meaning anything the moment there are three.
+* @mikemadison-fdp
