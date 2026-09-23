@@ -264,6 +264,48 @@ describe('§8a the trace log', () => {
     expect(log.some((r) => r.origin === 'tool')).toBe(true);
   });
 
+  it('attributes a served call to the dataset it touched, not "unknown"', async () => {
+    // Found by driving the real MCP server over stdio: every served request landed in the
+    // log as dataset "unknown", so Activity could not filter agent traffic by dataset and
+    // the requests dataset's own dataset_id column was useless. The tool name resolves to
+    // a dataset partway through, which is after the trace has already started — so the
+    // builder has to be told, and was not.
+    await ws.datera.callTool('query_ungrouped', { sql: 'SELECT 1' });
+
+    const [record] = await ws.datera.queryTraceLog({ limit: 1 });
+    expect(record?.datasetId).toBe(DEFAULT_DATASET_ID);
+  });
+
+  it('attributes describe_schema to the dataset it described', async () => {
+    await ws.datera.callTool('describe_schema', { dataset: DEFAULT_DATASET_ID });
+
+    const [record] = await ws.datera.queryTraceLog({ limit: 1 });
+    expect(record?.datasetId).toBe(DEFAULT_DATASET_ID);
+  });
+
+  it('does not blame the guard for the caller\'s own broken SQL', async () => {
+    // Seen driving the real server: a query naming a column that does not exist came back
+    // traced as "guard | Refused", which reads as Datera declining on principle. It did
+    // not — DuckDB could not bind the column. A trace that misattributes a failure is
+    // worse than one that omits it, because §1.4 is the reason anyone believes the rest.
+    const result = await ws.datera.callTool('query_ungrouped', {
+      sql: 'SELECT no_such_column FROM orders',
+    });
+
+    expect(result.isError).toBe(true);
+    const stage = result.trace!.stages.find((s) => s.label === 'Refused');
+    expect(stage).toBeUndefined();
+    expect(result.trace!.stages.at(-1)?.kind).toBe('execute');
+  });
+
+  it('still says the guard refused when the guard is what refused', async () => {
+    const result = await ws.datera.callTool('query_ungrouped', { sql: 'DELETE FROM orders' });
+
+    const stage = result.trace!.stages.at(-1);
+    expect(stage?.kind).toBe('guard');
+    expect(stage?.label).toBe('Refused');
+  });
+
   it('never stores a credential', async () => {
     await ws.datera.setApiKey('openai', 'sk-trace-leak-test-123456');
     await ws.datera.setTracePayloadCapture(true);

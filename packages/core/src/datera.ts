@@ -2335,10 +2335,11 @@ export class Datera {
 
     trace.add({ kind: 'parse', label: 'Tool call received', detail: `${name}(${Object.keys(args).join(', ')})` });
 
-    const fail = async (message: string, datasetId = 'unknown'): Promise<ToolResult> => {
+    // The dataset is not a parameter here: it is set on the trace the moment it is known,
+    // so a failure is attributed to the same dataset a success would be.
+    const fail = async (message: string): Promise<ToolResult> => {
       const built = trace.build('structured', false);
       await this.record(built, { origin: 'tool', rowsReturned: 0, ok: false, error: message });
-      void datasetId;
       return { content: [{ type: 'text', text: message }], isError: true, trace: built };
     };
 
@@ -2349,6 +2350,7 @@ export class Datera {
     // all carry a `query_`/`search_`/`propose_write_` prefix or are `describe_schema`).
     const operation = (await this.catalog.listOperations()).find((o) => o.name === name);
     if (operation !== undefined) {
+      trace.forDataset(operation.datasetId);
       trace.add({ kind: 'route', label: 'Authored operation', detail: `${operation.name} (${operation.kind})` });
       try {
         const result = await this.callOperation(operation.datasetId, operation.name, args);
@@ -2360,7 +2362,7 @@ export class Datera {
           trace: built,
         };
       } catch (e) {
-        return fail((e as { message?: string }).message ?? String(e), operation.datasetId);
+        return fail((e as { message?: string }).message ?? String(e));
       }
     }
 
@@ -2368,6 +2370,7 @@ export class Datera {
       const datasetId = typeof args['dataset'] === 'string' ? args['dataset'] : DEFAULT_DATASET_ID;
       const dataset = datasets.find((d) => d.id === datasetId);
       if (dataset === undefined) return fail(`Unknown dataset "${datasetId}".`);
+      trace.forDataset(dataset.id);
 
       const schemas = await this.datasetSchemas(dataset.id, dataset.schemaName);
       const dictionaries: SourceDictionary[] = [];
@@ -2387,6 +2390,7 @@ export class Datera {
 
     const dataset = datasets.find((d) => name.endsWith(`_${toolSuffix(d)}`));
     if (dataset === undefined) return fail(`Unknown tool "${name}".`);
+    trace.forDataset(dataset.id);
 
     if (name.startsWith('query_')) {
       const sql = typeof args['sql'] === 'string' ? args['sql'] : '';
@@ -2406,8 +2410,21 @@ export class Datera {
           trace: built,
         };
       } catch (e) {
-        trace.add({ kind: 'guard', label: 'Refused', detail: e instanceof Error ? e.message : String(e) });
-        return fail(e instanceof Error ? e.message : String(e), dataset.id);
+        // Two very different failures arrive here, and calling both "Refused" under the
+        // guard reads as Datera declining on principle when DuckDB simply could not run
+        // the statement. The codes already distinguish them; the trace now does too.
+        const message = e instanceof Error ? e.message : String(e);
+        const refused =
+          DateraError.is(e, 'READ_ONLY_VIOLATION') ||
+          DateraError.is(e, 'CROSS_DATASET_ACCESS') ||
+          DateraError.is(e, 'WRITE_NOT_PERMITTED');
+
+        trace.add(
+          refused
+            ? { kind: 'guard', label: 'Refused', detail: message }
+            : { kind: 'execute', label: 'Could not run', detail: message },
+        );
+        return fail(message);
       }
     }
 
@@ -2457,7 +2474,7 @@ export class Datera {
           trace: built,
         };
       } catch (e) {
-        return fail(e instanceof Error ? e.message : String(e), dataset.id);
+        return fail(e instanceof Error ? e.message : String(e));
       }
     }
 
