@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StageKind } from '@datera/core';
 
 /**
@@ -51,6 +52,9 @@ const WHERE: Partial<Record<StageKind | string, string>> = {
   retrieve: 'in DuckDB',
 };
 
+/** How long each hop lingers when stepping through. The prototype's pace, kept. */
+const STEP_MS = 230;
+
 export function TraceFlow({
   stages,
   totalMs,
@@ -62,14 +66,65 @@ export function TraceFlow({
   // scaling to it makes every bar look short enough to be unremarkable.
   const slowest = Math.max(1, ...stages.map((s) => s.durationMs));
 
+  /**
+   * How many hops are shown.
+   *
+   * The trace arrives complete, which is the right default — you opened it to read it,
+   * not to wait for it. Stepping through is opt-in, and it is what made the prototype's
+   * version legible to someone who does not already know the pipeline: you watch the
+   * request travel instead of decoding a finished diagram.
+   */
+  const [revealed, setRevealed] = useState(stages.length);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A different trace in the same drawer must not inherit the previous one's progress.
+  useEffect(() => {
+    setRevealed(stages.length);
+  }, [stages]);
+
+  const stop = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+
+  // Unmounting mid-step must not leave a timer setting state on a gone component.
+  useEffect(() => stop, [stop]);
+
+  const replay = useCallback(() => {
+    stop();
+
+    // Someone who has asked not to be shown motion gets the trace, not a refusal to
+    // animate dressed up as a feature.
+    const reduced =
+      typeof globalThis.matchMedia === 'function' &&
+      globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setRevealed(stages.length);
+      return;
+    }
+
+    setRevealed(1);
+    const step = (n: number): void => {
+      if (n > stages.length) return;
+      timer.current = setTimeout(() => {
+        setRevealed(n);
+        step(n + 1);
+      }, STEP_MS);
+    };
+    step(2);
+  }, [stages.length, stop]);
+
   return (
-    <div className="traceflow" data-traceflow>
+    <div className="traceflow" data-traceflow data-revealed={revealed}>
       <div className="tfhead">
         <span className="tft">{Math.round(totalMs)}ms end to end</span>
         <span className="tfs">{stages.length} hops</span>
+        <button className="linkbtn" data-trace-replay onClick={replay}>
+          ▶ Trace a request
+        </button>
       </div>
 
-      {stages.map((stage, i) => {
+      {stages.slice(0, revealed).map((stage, i) => {
         const layer = layerOf(stage.kind);
         const share = stage.durationMs / slowest;
 
@@ -103,13 +158,17 @@ export function TraceFlow({
       })}
 
       {/* The journey returns. Saying so is most of what makes this a flow rather than a
-          list, and it is where the row count belongs. */}
+          list, and it is where the row count belongs. Held back while stepping through:
+          announcing the arrival before the request has got there is the one thing that
+          would make the step-through lie. */}
+      {revealed >= stages.length && (
       <div className="tfhop back">
         <div className="tfrail"><span className="tfdot" /></div>
         <div className="tfbody">
           <div className="tfrow"><span className="tfname">Back to you</span></div>
         </div>
       </div>
+      )}
     </div>
   );
 }
