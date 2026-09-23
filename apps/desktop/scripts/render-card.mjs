@@ -27,8 +27,13 @@ const page = await browser.newPage({
 });
 
 await page.goto(pathToFileURL(resolve(input)).href, { waitUntil: 'networkidle' });
+
 // Webfonts, specifically: a screenshot taken before they load is the fallback typeface.
-await page.evaluate(() => document.fonts.ready);
+//
+// Passed as a string rather than a function, because the body runs inside the browser where
+// `document` exists — as a function it is lint-checked against this file's Node globals,
+// where it does not.
+await page.evaluate('document.fonts.ready');
 await page.waitForTimeout(400);
 
 await page.screenshot({ path: resolve(output) });
