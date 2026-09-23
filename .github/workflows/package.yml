@@ -176,6 +176,28 @@ jobs:
             exit 1
           fi
 
+      # Each job builds one architecture, and the artifact it uploads must contain only
+      # that one.
+      #
+      # The mac target used to name both architectures in its own config, which the --arm64
+      # and --x64 flags do not override — so the Apple silicon runner also produced an x64
+      # app, with arm64 bindings inside it. That app starts and cannot open a workspace,
+      # which is the exact failure this workflow was written to prevent, and it was being
+      # uploaded beside the good build. The assertion above missed it because it inspects
+      # only this job's own unpacked directory.
+      - name: Assert only this architecture was built
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          other=$([ "${{ matrix.arch }}" = "arm64" ] && echo "x64" || echo "arm64")
+          strays=$(find apps/desktop/release -maxdepth 1 -name "*mac-$other*" -print)
+          if [ -n "$strays" ]; then
+            echo "::error::Built $other artifacts on a ${{ matrix.arch }} runner: $strays"
+            exit 1
+          fi
+          echo "Only ${{ matrix.arch }} artifacts present, as intended."
+          ls apps/desktop/release
+
       # The inverse of what this used to assert. A .duckdb_extension cannot be codesigned,
       # and Apple's notary unpacks archives to find them — so one inside the bundle, in any
       # form, makes the build un-notarizable.
