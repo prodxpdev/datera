@@ -146,6 +146,23 @@ describe('what Datera has stored', () => {
     }
   });
 
+  it('leaves the window usable after clearing a cache', async () => {
+    // Clearing a cache must be visible as nothing but a cache clear. The first attempt
+    // here also called session.clearStorageData(), which wipes localStorage as well —
+    // app state, not cache — and the Settings panel became unopenable on Linux. The
+    // narrower clearCache() is the one that releases the handles Windows locks.
+    await page.evaluate(async () =>
+      (globalThis as unknown as {
+        datera: { removeStorage(id: string): Promise<{ remaining: number }> };
+      }).datera.removeStorage('caches'),
+    );
+
+    // The navigation still responds, which is what "unopenable" broke.
+    expect(await page.isVisible('[data-nav="activity"]')).toBe(true);
+    await page.click('[data-nav="activity"]');
+    await page.waitForSelector('[data-serve="log"]', { timeout: 30_000 });
+  });
+
   it('reports nothing remaining when it removed everything', async () => {
     const result = await page.evaluate(async () =>
       (globalThis as unknown as {

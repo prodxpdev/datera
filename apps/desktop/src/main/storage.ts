@@ -148,12 +148,18 @@ export async function removeStorage(id: string, workspacePath: string): Promise<
     throw new Error(`Not something Datera stores: "${id}".`);
   }
 
-  // Chromium's caches are Chromium's to clear. Asking it beats deleting files underneath a
-  // live browser, which is how those handles come to be held in the first place.
+  // Chromium's disk cache is Chromium's to clear. Asking it beats deleting files
+  // underneath a live browser, which is how those handles come to be held in the first
+  // place.
+  //
+  // `clearCache()` only. `clearStorageData()` also wipes localStorage, which is where the
+  // window keeps state like whether first run has been dismissed — so clearing a cache
+  // reset the app underneath the person who clicked it, and on Linux the first-run overlay
+  // came back over the navigation. A cache clear must not be visible as anything but a
+  // cache clear.
   if (id === 'caches') {
     try {
       await session.defaultSession.clearCache();
-      await session.defaultSession.clearStorageData();
     } catch {
       // Best effort: the sweep below is the fallback, not the other way round.
     }
