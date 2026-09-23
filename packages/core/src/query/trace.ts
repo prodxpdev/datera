@@ -13,6 +13,16 @@ import type { ModelDescriptor } from '../models/types.js';
  */
 
 export type StageKind =
+  /**
+   * The two hops that happen before Datera is involved at all — the agent that called,
+   * and the transport it arrived over.
+   *
+   * Present only for served requests. A trace that began inside Datera was accurate and
+   * incomplete: for an agent-driven call, the interesting question is often what asked
+   * and how it got here, and that was the part nobody could see.
+   */
+  | 'agent'
+  | 'transport'
   | 'parse'
   | 'route'
   | 'schema'

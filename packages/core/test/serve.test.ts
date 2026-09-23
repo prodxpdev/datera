@@ -274,3 +274,78 @@ describe('§8a the trace log', () => {
     expect(JSON.stringify(log)).not.toContain('sk-trace-leak-test-123456');
   });
 });
+
+/**
+ * Where a served request came from (§12.9).
+ *
+ * A trace used to begin inside Datera, which is accurate and incomplete: for an
+ * agent-driven call the interesting question is often *what* asked and *how it got
+ * here*, and that was exactly the part nobody could see. The two hops before Datera are
+ * supplied by the host, because only the host knows whether it is being driven over
+ * stdio, over HTTP, or from the app's own UI.
+ */
+describe('a served request records where it came from', () => {
+  let ws: TestWorkspace;
+  let fixtures: FixturePaths;
+
+  beforeEach(async () => {
+    fixtures = fixturePaths(process.env['DATERA_FIXTURES'] as string);
+    ws = await openTestWorkspace({ ports: testPorts() });
+    await ws.datera.addSource({ type: 'file', path: fixtures.ordersCsv, name: 'orders' });
+  });
+
+  afterEach(async () => {
+    await ws.dispose();
+  });
+
+  it('begins with the agent and the transport it arrived over', async () => {
+    const result = await ws.datera.callTool(
+      'query_ungrouped',
+      { sql: 'SELECT count(*) FROM orders' },
+      { transport: 'stdio', client: 'Claude Code' },
+    );
+
+    const kinds = result.trace!.stages.map((s) => s.kind);
+    expect(kinds[0]).toBe('agent');
+    expect(kinds[1]).toBe('transport');
+
+    expect(result.trace!.stages[0]?.label).toBe('Claude Code');
+    expect(result.trace!.stages[1]?.label).toBe('stdio');
+    // stdio's actual security property, said where someone is looking at the hop.
+    expect(result.trace!.stages[1]?.detail).toMatch(/no port, no token/i);
+  });
+
+  it('names HTTP differently, because it is a different claim', async () => {
+    const result = await ws.datera.callTool(
+      'query_ungrouped',
+      { sql: 'SELECT count(*) FROM orders' },
+      { transport: 'http' },
+    );
+
+    expect(result.trace!.stages[1]?.label).toBe('HTTP');
+    expect(result.trace!.stages[1]?.detail).toMatch(/token/i);
+    // No client named itself, so it is not invented.
+    expect(result.trace!.stages[0]?.label).toBe('Agent');
+  });
+
+  it('starts at Datera for a local call, rather than inventing a caller', async () => {
+    const result = await ws.datera.callTool('query_ungrouped', {
+      sql: 'SELECT count(*) FROM orders',
+    });
+
+    const kinds = result.trace!.stages.map((s) => s.kind);
+    expect(kinds).not.toContain('agent');
+    expect(kinds).not.toContain('transport');
+  });
+
+  it('keeps those hops in the persisted log, not just the live result', async () => {
+    await ws.datera.callTool(
+      'query_ungrouped',
+      { sql: 'SELECT count(*) FROM orders' },
+      { transport: 'stdio', client: 'Cursor' },
+    );
+
+    const [record] = await ws.datera.queryTraceLog({ limit: 1 });
+    expect(record?.stages[0]?.label).toBe('Cursor');
+  });
+});

@@ -84,7 +84,11 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
         return;
       }
 
-      const response = await handleRpc(options.datera, request, options.info);
+      // Per request, not per connection: HTTP has no session to hang a client name on,
+      // so a caller is whatever this request says it is.
+      const response = await handleRpc(options.datera, request, options.info, {
+        transport: 'http',
+      });
       respond(res, 200, response ?? {});
       return;
     }
@@ -143,9 +147,11 @@ export async function serveHttp(options: HttpServeOptions): Promise<RunningServe
     if (url.startsWith('/api/query') && req.method === 'POST') {
       const body = await readBody(req);
       const parsed = JSON.parse(body) as { dataset?: string; sql?: string };
-      const result = await options.datera.callTool(`query_${String(parsed.dataset ?? 'ungrouped')}`, {
-        sql: parsed.sql ?? '',
-      });
+      const result = await options.datera.callTool(
+        `query_${String(parsed.dataset ?? 'ungrouped')}`,
+        { sql: parsed.sql ?? '' },
+        { transport: 'http' },
+      );
       respond(res, result.isError ? 400 : 200, result);
       return;
     }

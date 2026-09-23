@@ -29,13 +29,17 @@ export interface FlowStage {
  * in a model, and time in Datera itself. Colouring by exact stage would be decoration;
  * this distinction is the one that changes what you would do about a slow request.
  */
-function layerOf(kind: string): 'datera' | 'model' | 'engine' {
+function layerOf(kind: string): 'caller' | 'datera' | 'model' | 'engine' {
+  // The hops before Datera, present only on a served request.
+  if (kind === 'agent' || kind === 'transport') return 'caller';
   if (kind === 'model' || kind === 'embed') return 'model';
   if (kind === 'execute' || kind === 'retrieve') return 'engine';
   return 'datera';
 }
 
 const WHERE: Partial<Record<StageKind | string, string>> = {
+  agent: 'outside Datera',
+  transport: 'on the way in',
   parse: 'in Datera',
   route: 'in Datera',
   schema: 'in Datera',

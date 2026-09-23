@@ -711,3 +711,8 @@
 .tfhop.engine .tfbar span { background: var(--green); }
 .tfmodel { font-family: var(--mono); font-size: 11px; color: var(--violet); }
 .tfdetail { font-size: 12px; color: var(--ink2); line-height: 1.55; overflow-wrap: anywhere; }
+
+/* The two hops before Datera — an agent, and the transport it arrived over. Amber
+   because they are the part of the journey Datera does not control. */
+.tfhop.caller .tfdot { background: var(--amber); }
+.tfhop.caller .tfbar span { background: var(--amber); }

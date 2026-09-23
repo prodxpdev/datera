@@ -799,6 +799,23 @@ export class Datera {
     /** Bound after the guard has approved the statement, never interpolated into it. */
     params?: readonly SqlParam[],
   ): Promise<QueryResult> {
+    return this.runQuery(datasetId, sql, params, true);
+  }
+
+  /**
+   * The query path, with a say in whether it writes its own log record.
+   *
+   * A served tool call is one request and belongs in the log once. Recording here as well
+   * produced two entries for it — the tool's trace, with its agent and transport hops,
+   * and the bare query underneath — which double-counts every served request and buries
+   * the one that describes what actually happened.
+   */
+  private async runQuery(
+    datasetId: string,
+    sql: string,
+    params: readonly SqlParam[] | undefined,
+    record: boolean,
+  ): Promise<QueryResult> {
     const dataset = await this.getDataset(datasetId);
     await this.engine.executeInternal(`SET search_path = ${quoteIdent(dataset.schemaName)}`);
 
@@ -826,12 +843,12 @@ export class Datera {
         params,
       );
     } catch (e) {
-      await this.recordQuery(trace, datasetId, 0, false, (e as { message?: string }).message);
+      if (record) await this.recordQuery(trace, datasetId, 0, false, (e as { message?: string }).message);
       throw e;
     }
 
     const { resultSet, check, durationMs } = executed;
-    await this.recordQuery(trace, datasetId, resultSet.rows.length, true);
+    if (record) await this.recordQuery(trace, datasetId, resultSet.rows.length, true);
 
     return {
       datasetId,
@@ -2281,11 +2298,41 @@ export class Datera {
    * the write gate. A request arriving over MCP is not trusted more than one typed into
    * the SQL editor.
    */
-  async callTool(name: string, args: Readonly<Record<string, unknown>>): Promise<ToolResult> {
+  async callTool(
+    name: string,
+    args: Readonly<Record<string, unknown>>,
+    /**
+     * Where the call came from, when it came from outside.
+     *
+     * Supplied by the host, because only the host knows: the core has no idea whether it
+     * is being driven over stdio, over HTTP, or from the app's own UI. Absent means a
+     * local call, and the trace simply starts at Datera.
+     */
+    via?: { readonly transport?: 'stdio' | 'http' | undefined; readonly client?: string | undefined },
+  ): Promise<ToolResult> {
     const trace = new TraceBuilder(
       this.makeId(), 'unknown', name,
       this.ports.clock.now().toISOString(), () => this.ports.clock.monotonicMs(),
     );
+
+    // The two hops before Datera. Recorded first so a served request reads as the journey
+    // it is — something called, over something — rather than beginning mid-air.
+    if (via !== undefined) {
+      trace.add({
+        kind: 'agent',
+        label: via.client ?? 'Agent',
+        detail: `called ${name}(${Object.keys(args).join(', ')})`,
+      });
+      trace.add({
+        kind: 'transport',
+        label: via.transport === 'http' ? 'HTTP' : 'stdio',
+        detail:
+          via.transport === 'http'
+            ? 'Arrived over HTTP, authenticated with the local token.'
+            : 'Arrived over stdio — no port, no token, nothing listening.',
+      });
+    }
+
     trace.add({ kind: 'parse', label: 'Tool call received', detail: `${name}(${Object.keys(args).join(', ')})` });
 
     const fail = async (message: string, datasetId = 'unknown'): Promise<ToolResult> => {
@@ -2346,7 +2393,7 @@ export class Datera {
       if (sql.length === 0) return fail('The `sql` argument is required.');
 
       try {
-        const result = await this.query(dataset.id, sql);
+        const result = await this.runQuery(dataset.id, sql, undefined, false);
         trace.add({ kind: 'guard', label: 'Read-only check', detail: 'Passed.' });
         trace.add({ kind: 'execute', label: 'Ran locally', rowCount: result.rows.length });
 
