@@ -17,6 +17,7 @@ import {
   NodeLocalLlm,
   nodeDuckDBDriver,
   resolveExtensionDirectory,
+  unpackExtensions,
 } from '@datera/node-runtime';
 import { IPC, type SerialisedError } from '../shared/contract.js';
 import { SafeStorageSecretStore, secretStorePath } from './secret-store.js';
@@ -94,11 +95,17 @@ async function openCore(): Promise<Datera> {
         seedDirectory: app.isPackaged ? join(process.resourcesPath, 'models') : join(appRoot, 'models'),
       }),
     },
-    // Packaged: the staged extensions ride along in Contents/Resources. Unpackaged: found
-    // by walking up from the app root. Getting this wrong in a packaged build is silent —
-    // xlsx and SQLite simply stop working — so it is asserted by the packaged smoke test.
+    // Packaged: the extensions ship gzipped (codesign refuses a .duckdb_extension, which
+    // is a Mach-O library with metadata appended) and are unpacked into the app's data
+    // directory on first run. Unpackaged: found by walking up from the app root.
+    //
+    // Getting this wrong in a packaged build is silent — xlsx and SQLite simply stop
+    // working — so the packaged smoke test asserts both extensions actually load.
     extensionDirectory: app.isPackaged
-      ? join(process.resourcesPath, 'duckdb-extensions')
+      ? unpackExtensions(
+          join(process.resourcesPath, 'extensions-packed'),
+          join(app.getPath('userData'), 'duckdb-extensions'),
+        )
       : resolveExtensionDirectory(appRoot),
     appVersion: app.getVersion(),
   });

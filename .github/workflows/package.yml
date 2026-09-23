@@ -64,6 +64,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @datera/desktop build
       - run: node scripts/stage-extensions.mjs
+      # Compressed before packaging: codesign refuses a .duckdb_extension, so they cannot
+      # travel as loose files inside a signed bundle.
+      - run: node scripts/pack-extensions.mjs
 
       # electron-builder wants the notarization key as a *file path*, and a secret can only
       # hold its contents. Written to the runner's temp directory, which is discarded with
@@ -115,7 +118,7 @@ jobs:
       - name: Assert the DuckDB extensions shipped
         shell: bash
         run: |
-          if ! find apps/desktop/release -path '*duckdb-extensions*' -name '*.duckdb_extension' | grep -q .; then
+          if ! find apps/desktop/release -path '*extensions-packed*' -name '*.duckdb_extension.gz' | grep -q .; then
             echo "::error::No staged DuckDB extensions — xlsx and SQLite would fail."
             exit 1
           fi

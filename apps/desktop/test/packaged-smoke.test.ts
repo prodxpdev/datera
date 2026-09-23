@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -105,15 +105,15 @@ describe.runIf(runnable)('the packaged app', () => {
 
     expect(statuses.length).toBeGreaterThan(0);
 
-    const binary = await app.evaluate(async ({ app: electronApp }) => {
-      const { existsSync, readdirSync } = await import('node:fs');
-      const { join } = await import('node:path');
-      const dir = join(
-        electronApp.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked'),
-        'node_modules/@node-llama-cpp',
-      );
-      return existsSync(dir) ? readdirSync(dir) : [];
-    });
+    // Checked from the test process with plain fs, not inside Electron: a dynamic import
+    // in an evaluate callback is rewritten by the test transform into a helper that does
+    // not exist in the main process, so the check failed for its own reasons rather than
+    // the app's.
+    const runtimeDir = join(
+      appRoot,
+      'release/mac-arm64/Datera.app/Contents/Resources/app.asar.unpacked/node_modules/@node-llama-cpp',
+    );
+    const binary = existsSync(runtimeDir) ? readdirSync(runtimeDir) : [];
 
     expect(binary, 'no @node-llama-cpp platform package in the packaged app').not.toEqual([]);
   }, 120_000);

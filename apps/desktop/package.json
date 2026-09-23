@@ -9,7 +9,7 @@
     "build": "node build.mjs",
     "dev": "node ../../scripts/brand-dev-electron.mjs && node build.mjs && electron .",
     "start": "node ../../scripts/brand-dev-electron.mjs && electron .",
-    "package": "node build.mjs && electron-builder --mac dir --arm64",
+    "package": "node ../../scripts/pack-extensions.mjs && node build.mjs && electron-builder --mac dir --arm64",
     "brand": "node ../../scripts/brand-dev-electron.mjs",
     "package:offline": "node ../../scripts/build-offline.mjs"
   },
@@ -96,8 +96,8 @@
     ],
     "extraResources": [
       {
-        "from": "../../vendor/duckdb-extensions",
-        "to": "duckdb-extensions"
+        "from": "build/extensions-packed",
+        "to": "extensions-packed"
       }
     ],
     "dmg": {
