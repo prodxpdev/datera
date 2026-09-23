@@ -27,6 +27,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # No Intel macOS job. `macos-13` is the only Intel image GitHub offers and it is
+        # being retired — two consecutive runs sat queued without ever being allocated.
+        # The alternative, cross-building x64 on an arm64 runner, reintroduces exactly the
+        # mismatched-native-binding failure this file exists to prevent, and nothing on
+        # that runner could smoke-test the result. Apple stopped selling Intel Macs in
+        # 2023; an Intel user builds from source until that changes.
         include:
           - name: macOS (Apple silicon)
             os: macos-latest
@@ -34,12 +40,6 @@ jobs:
             unpacked: mac-arm64
             arch: arm64
             smoke: true
-          - name: macOS (Intel)
-            os: macos-13
-            target: --mac --x64
-            unpacked: mac
-            arch: x86_64
-            smoke: false
           - name: Windows
             os: windows-latest
             target: --win --x64
