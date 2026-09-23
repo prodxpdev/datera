@@ -113,6 +113,33 @@ describe('Ask and the transparency drawer', () => {
     expect(drawer).toMatch(/\$0|no cost|runs on this machine/i);
   });
 
+  it('shows the request as a journey, with where the time went', async () => {
+    // The prototype had this and the app had lost it: the stages were all present as a
+    // flat list, which answers "what happened" but not "where did it go and what did it
+    // cost" — the question someone opens a trace with.
+    await page.waitForSelector('[data-traceflow]', { timeout: 10_000 });
+
+    const flow = await page.textContent('[data-traceflow]');
+    expect(flow).toMatch(/end to end/);
+    expect(flow).toMatch(/hops/);
+
+    // The hops are named for where they happen, not only for what they are.
+    expect(flow).toMatch(/in Datera/);
+    expect(flow).toMatch(/at the model/);
+    expect(flow).toMatch(/in DuckDB/);
+
+    // And it comes back, which is most of what makes it a flow rather than a list.
+    expect(flow).toMatch(/Back to you/);
+
+    // Bars are proportional to real durations: the model hop dominates a real request,
+    // and a chart that flattened that would be a prettier lie.
+    const widths = await page.$$eval('[data-traceflow] .tfbar span', (els) =>
+      els.map((el) => Number.parseFloat((el as HTMLElement).style.width)),
+    );
+    expect(widths.length).toBeGreaterThan(3);
+    expect(Math.max(...widths)).toBeGreaterThan(Math.min(...widths));
+  });
+
   it('shows every stage of the pipeline in order', async () => {
     const stages = await page.$$eval('.stage .sl', (els) => els.map((e) => e.textContent ?? ''));
     expect(stages.length).toBeGreaterThanOrEqual(6);

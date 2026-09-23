@@ -7,6 +7,7 @@ import {
 } from '@datera/core';
 import type { DateraApi } from '../shared/contract.js';
 import { SchemaMap } from './SchemaMap.js';
+import { TraceFlow } from './TraceFlow.js';
 
 /**
  * Query — one surface, two ways in (spec §5, §12.1).
@@ -752,6 +753,10 @@ function TraceDrawer({ answer, onClose }: { readonly answer: AskResult; readonly
             {answer.trace.costUsd === 0 ? '$0 — runs on this machine' : `$${answer.trace.costUsd.toFixed(4)}`}
           </span>
         </div>
+
+        {/* The journey first — which hop the time went to — then each stage in full,
+            including the exact bytes sent to the model. */}
+        <TraceFlow stages={answer.trace.stages} totalMs={answer.trace.totalMs} />
 
         {answer.trace.stages.map((stage, i) => (
           <Stage key={`${stage.kind}-${i}`} index={i + 1} stage={stage} />

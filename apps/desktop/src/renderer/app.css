@@ -684,3 +684,30 @@
 .logtable tbody tr { cursor: pointer; }
 .logtable tbody tr:hover { background: var(--indigo-bg); }
 .tracecell { color: var(--indigo); white-space: nowrap; font-size: 11px; }
+
+/* The trace as a journey. */
+.traceflow { margin: 10px 0 16px; min-width: 0; }
+.tfhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.tft { font-size: 13px; font-weight: 600; }
+.tfs { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); }
+.tfhop { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; }
+.tfrail { display: flex; flex-direction: column; align-items: center; }
+.tfdot { width: 9px; height: 9px; border-radius: 50%; background: var(--line2); margin-top: 5px; flex: 0 0 auto; }
+.tfline { flex: 1; width: 2px; background: var(--line); margin: 3px 0; min-height: 14px; }
+.tfhop.datera .tfdot { background: var(--indigo); }
+.tfhop.model .tfdot { background: var(--violet); }
+.tfhop.engine .tfdot { background: var(--green); }
+.tfhop.back .tfdot { background: var(--ink3); }
+.tfbody { padding-bottom: 12px; min-width: 0; }
+.tfrow { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tfname { font-size: 13px; font-weight: 500; }
+.tfkind { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink3); border: 1px solid var(--line2); border-radius: 20px; padding: 1px 6px; }
+.tfwhere { font-size: 11px; color: var(--ink3); }
+.tfms { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.tfbar { height: 4px; background: var(--bg); border-radius: 3px; margin: 5px 0 4px; overflow: hidden; }
+.tfbar span { display: block; height: 100%; border-radius: 3px; }
+.tfhop.datera .tfbar span { background: var(--indigo); }
+.tfhop.model .tfbar span { background: var(--violet); }
+.tfhop.engine .tfbar span { background: var(--green); }
+.tfmodel { font-family: var(--mono); font-size: 11px; color: var(--violet); }
+.tfdetail { font-size: 12px; color: var(--ink2); line-height: 1.55; overflow-wrap: anywhere; }
