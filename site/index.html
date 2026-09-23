@@ -165,7 +165,7 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:30px 0;color:var
     <a class="btn" href="#pricing">Download free</a>
     <a class="btn ghost" href="#how">See the glass box</a>
   </div>
-  <div class="micro">Mac · Windows · Linux — runs on your machine, read-only by default</div>
+  <div class="micro">Mac (Apple Silicon) · Windows · Linux — runs on your machine, read-only by default</div>
 </header>
 
 <section class="wrap">
@@ -332,16 +332,21 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:30px 0;color:var
         <li>The full glass-box transparency</li>
         <li>Datasets, dictionary, normalize, copy-on-write versions</li>
         <li>Local MCP + API · bring your own key · read-only by default</li>
-        <li>Mac, Windows &amp; Linux · self-host to share on your own network</li>
+        <li>Mac (Apple Silicon), Windows &amp; Linux · self-host to share on your own network</li>
       </ul>
-      <a class="btn" href="#">Download free</a>
-      <div class="note">Apache-2.0. Source on GitHub.</div>
+      <a class="btn" href="https://github.com/prodxpdev/datera/releases">Download free</a>
+      <div class="note">
+        Apache-2.0. <a href="https://github.com/prodxpdev/datera">Source on GitHub.</a>
+        The Mac build is signed and notarized by Apple. The Windows build is not yet signed, so
+        Windows will warn you before it runs — choose <i>More info → Run anyway</i>. On an Intel
+        Mac, <a href="https://github.com/prodxpdev/datera#getting-started">build from source</a>.
+      </div>
     </div>
 
     <div class="pcard paid">
-      <span class="tag paid">Proprietary</span>
+      <span class="tag paid">In development</span>
       <h3>Datera Server</h3>
-      <div class="price">One-time license · per version</div>
+      <div class="price">Not yet available · one-time license, per version</div>
       <ul>
         <li>Deploy to Docker, Cloud Run, a VM, or your own cloud</li>
         <li>Host datasets and expose API + MCP to other people</li>
@@ -350,8 +355,13 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:30px 0;color:var
         <li>Push from the Datera client to Test / Production environments</li>
         <li>Perpetual use of your version + a year of security updates</li>
       </ul>
-      <a class="btn" href="#">Get Datera Server</a>
-      <div class="note">Run it yourself. No metering, no seats, no phone-home.</div>
+      <a class="btn ghost" href="https://github.com/prodxpdev/datera/discussions">Follow its progress</a>
+      <div class="note">
+        <b>Not finished, and not for sale yet.</b> The client half — driving a remote server,
+        pushing a dataset to it — is built and tested today. The server itself is not, and there
+        is no date. It is listed here so the shape of the project is clear, not to take your money.
+        When it exists: run it yourself, no metering, no seats, no phone-home.
+      </div>
     </div>
   </div>
 </section>
