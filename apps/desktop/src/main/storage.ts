@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, session } from 'electron';
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -123,21 +123,58 @@ export async function storageUsage(workspacePath: string): Promise<readonly Stor
   return items;
 }
 
+/** What a removal managed to do. */
+export interface RemovalResult {
+  /** Bytes still on disk afterwards — non-zero when something was in use. */
+  readonly remaining: number;
+}
+
 /**
- * Remove one item.
+ * Remove one item, tolerating whatever is currently in use.
+ *
+ * A file the running process holds open cannot be unlinked on Windows, and Chromium keeps
+ * handles on its own caches for as long as the window exists — so "clear caches" failed
+ * with EPERM in the one situation that is entirely normal: doing it while the app is
+ * running. Being unable to delete a file is therefore a fact to report, not an error; the
+ * caller learns what is left and can say it goes on restart.
  *
  * The id is looked up in a fixed table rather than joined onto a path. A caller that could
  * name an arbitrary path here would be a delete-anything primitive reachable from the
  * renderer, which is exactly what the preload boundary exists to prevent.
  */
-export async function removeStorage(id: string, workspacePath: string): Promise<void> {
+export async function removeStorage(id: string, workspacePath: string): Promise<RemovalResult> {
   const paths = locations(workspacePath);
   if (!Object.prototype.hasOwnProperty.call(paths, id)) {
     throw new Error(`Not something Datera stores: "${id}".`);
   }
-  for (const path of paths[id as StorageId]) {
-    await rm(path, { recursive: true, force: true });
+
+  // Chromium's caches are Chromium's to clear. Asking it beats deleting files underneath a
+  // live browser, which is how those handles come to be held in the first place.
+  if (id === 'caches') {
+    try {
+      await session.defaultSession.clearCache();
+      await session.defaultSession.clearStorageData();
+    } catch {
+      // Best effort: the sweep below is the fallback, not the other way round.
+    }
   }
+
+  for (const path of paths[id as StorageId]) {
+    try {
+      await rm(path, { recursive: true, force: true });
+    } catch (e) {
+      // Only the "it is in use" family is survivable. Anything else is a real failure and
+      // must surface rather than be reported as a partial success.
+      const code = (e as { code?: string }).code;
+      if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES' && code !== 'ENOTEMPTY') {
+        throw e;
+      }
+    }
+  }
+
+  let remaining = 0;
+  for (const path of paths[id as StorageId]) remaining += await sizeOf(path);
+  return { remaining };
 }
 
 /**

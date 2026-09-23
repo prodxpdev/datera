@@ -152,7 +152,8 @@ export interface DateraApi {
    * app knows where it put things.
    */
   storageUsage(): Promise<readonly StorageItem[]>;
-  removeStorage(id: string): Promise<void>;
+  /** Reports bytes still present — non-zero when something was in use. */
+  removeStorage(id: string): Promise<{ remaining: number }>;
   resetSettings(): Promise<void>;
   removalInstruction(): Promise<string>;
 

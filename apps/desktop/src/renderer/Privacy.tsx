@@ -63,8 +63,16 @@ export function Privacy({
     async (id: string) => {
       setBusy(true);
       try {
-        await api.removeStorage(id);
-        setRemoved(id);
+        const { remaining } = await api.removeStorage(id);
+        // Files the app has open cannot be deleted while it runs — normal on Windows, and
+        // true of Chromium's caches everywhere. Saying so beats reporting a clean removal
+        // that the size column then contradicts.
+        setRemoved(
+          remaining > 0
+            ? 'Removed what could be removed. Some files are still in use and will go when ' +
+              'Datera next starts.'
+            : 'Removed.',
+        );
       } finally {
         setBusy(false);
         setConfirming(null);
@@ -77,9 +85,15 @@ export function Privacy({
   const removeEverything = useCallback(async () => {
     setBusy(true);
     try {
-      for (const item of storage) await api.removeStorage(item.id);
+      let leftover = 0;
+      for (const item of storage) leftover += (await api.removeStorage(item.id)).remaining;
       await api.resetSettings();
-      setRemoved(await api.removalInstruction());
+      const instruction = await api.removalInstruction();
+      setRemoved(
+        leftover > 0
+          ? `${instruction} A few files are still in use and will go when Datera closes.`
+          : instruction,
+      );
     } finally {
       setBusy(false);
       setConfirming(null);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -115,6 +115,44 @@ describe('what Datera has stored', () => {
 
     const after = await storage();
     expect(after.find((i) => i.id === 'workspace')?.bytes).toBeGreaterThan(0);
+  });
+
+  it('does not fail when a file is in use, because on Windows they always are', async () => {
+    // Windows locks files a running process holds open, so unlinking Chromium's own
+    // GPUCache while the window is up fails with EPERM — which threw, and took the whole
+    // panel with it. A user clearing caches in a live app is the normal case, not an edge
+    // one, so being unable to delete a file cannot be an error.
+    //
+    // Simulated here with a directory nothing can unlink within, which is the closest
+    // POSIX equivalent of a held file handle.
+    const stuck = join(workspacePath, '.profile', 'Cache', 'stuck');
+    await mkdir(stuck, { recursive: true });
+    await writeFile(join(stuck, 'held'), 'in use');
+    await chmod(stuck, 0o555);
+
+    try {
+      const result = await page.evaluate(async () =>
+        (globalThis as unknown as {
+          datera: { removeStorage(id: string): Promise<{ remaining: number }> };
+        }).datera.removeStorage('caches'),
+      );
+
+      // It reports what it could not remove rather than throwing, so the UI can say the
+      // rest goes on restart.
+      expect(result.remaining).toBeGreaterThan(0);
+    } finally {
+      await chmod(stuck, 0o755);
+      await rm(stuck, { recursive: true, force: true });
+    }
+  });
+
+  it('reports nothing remaining when it removed everything', async () => {
+    const result = await page.evaluate(async () =>
+      (globalThis as unknown as {
+        datera: { removeStorage(id: string): Promise<{ remaining: number }> };
+      }).datera.removeStorage('extensions'),
+    );
+    expect(result.remaining).toBe(0);
   });
 
   it('refuses an id it does not recognise, rather than deleting something adjacent', async () => {
