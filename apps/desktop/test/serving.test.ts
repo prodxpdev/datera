@@ -24,6 +24,16 @@ describe('serving an agent while the app is open', () => {
   let workspacePath: string;
   let fixtures: FixturePaths;
 
+  /**
+   * Whether this machine can protect a credential at all.
+   *
+   * A CI runner typically has no keyring, and Datera refuses to issue a serving token
+   * without one (D-06) rather than writing it beside the data. So the behaviour under
+   * test genuinely differs by platform, and asserting only the happy path would either
+   * fail on Linux or quietly skip the part that matters there.
+   */
+  let protectedStore = false;
+
   beforeAll(async () => {
     fixtures = fixturePaths(process.env['DATERA_FIXTURES'] as string);
     workspacePath = await mkdtemp(join(tmpdir(), 'datera-serving-'));
@@ -39,6 +49,14 @@ describe('serving an agent while the app is open', () => {
     });
     page = await app.firstWindow();
     await page.waitForSelector('.brand', { timeout: 60_000 });
+
+    protectedStore = await app.evaluate(async ({ safeStorage }) => {
+      try {
+        return safeStorage.isEncryptionAvailable();
+      } catch {
+        return false;
+      }
+    });
 
     await page.evaluate(async (p: string) => {
       await (globalThis as unknown as { datera: { addSource(r: unknown): Promise<unknown> } }).datera
@@ -65,9 +83,21 @@ describe('serving an agent while the app is open', () => {
     // there; what matters here is that the socket answers.
     const started = await page.evaluate(async () =>
       (globalThis as unknown as {
-        datera: { startServing(port: number): Promise<{ running: boolean; url?: string; token?: string }> };
+        datera: {
+          startServing(port: number): Promise<{
+            running: boolean; url?: string; token?: string; error?: string;
+          }>;
+        };
       }).datera.startServing(0),
     );
+
+    if (!protectedStore) {
+      // No keyring: refuse, and say why. The failure that must never happen here is a
+      // port opening anyway without a token.
+      expect(started.running).toBe(false);
+      expect(started.error).toMatch(/nowhere protected|credential store|keyring/i);
+      return;
+    }
 
     expect(started.running).toBe(true);
     expect(started.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
@@ -108,6 +138,7 @@ describe('serving an agent while the app is open', () => {
   });
 
   it('refuses a caller without the token, because loopback is not a permission', async () => {
+    if (!protectedStore) return;
     const status = await page.evaluate(async () =>
       (globalThis as unknown as { datera: { servingStatus(): Promise<{ url?: string }> } })
         .datera.servingStatus(),
@@ -122,6 +153,8 @@ describe('serving an agent while the app is open', () => {
   });
 
   it('shows that served request in Activity, on the same trace the UI reads', async () => {
+    if (!protectedStore) return;
+
     // The point of the app hosting the server: the agent's traffic lands in the log the
     // user is already looking at, rather than in a separate process's.
     const records = await page.evaluate(async () =>
@@ -138,6 +171,7 @@ describe('serving an agent while the app is open', () => {
   });
 
   it('stops when told to, and the port is genuinely closed', async () => {
+    if (!protectedStore) return;
     const before = await page.evaluate(async () =>
       (globalThis as unknown as { datera: { servingStatus(): Promise<{ url?: string }> } })
         .datera.servingStatus(),

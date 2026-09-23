@@ -220,6 +220,25 @@ describe('§8 HTTP transport', () => {
     expect(record?.stages[0]?.label).toBe('Agent');
   });
 
+  it('closes promptly even while an agent holds a keep-alive connection', async () => {
+    // `server.close()` stops accepting and then waits for open connections to end, while
+    // an HTTP client keeps its socket alive by default. Node has closed *idle* keep-alive
+    // connections on close() since v19, so this holds today — it is pinned because the
+    // desktop app waits on exactly this in `before-quit`, and anything long-lived added
+    // to /mcp later (streaming, SSE) would turn quitting Datera into a hang.
+    server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, log: () => {} });
+
+    await fetch(`${server.url}/healthz`);
+
+    const closed = server.close();
+    const raced = await Promise.race([
+      closed.then(() => 'closed' as const),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 3_000)),
+    ]);
+    expect(raced).toBe('closed');
+    server = null;
+  });
+
   it('answers health checks without a credential', async () => {
     server = await serveHttp({ datera: ws.datera, info: INFO, port: 0, token: 'secret-token', log: () => {} });
 
