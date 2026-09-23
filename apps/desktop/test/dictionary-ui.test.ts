@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeApp } from './close-app.js';
+import { closeApp, removeWorkspace } from './close-app.js';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import { fixturePaths, type FixturePaths } from '@datera/testkit';
 
@@ -48,7 +48,7 @@ describe('Dictionary drafting', () => {
 
   afterAll(async () => {
     await closeApp(app);
-    await rm(workspacePath, { recursive: true, force: true });
+    await removeWorkspace(workspacePath);
   });
 
   it('drafts meanings without saving any of them', async () => {

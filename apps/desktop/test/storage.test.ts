@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeApp } from './close-app.js';
+import { closeApp, removeWorkspace } from './close-app.js';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import { fixturePaths, type FixturePaths } from '@datera/testkit';
 
@@ -64,7 +64,7 @@ describe('what Datera has stored', () => {
 
   afterAll(async () => {
     await closeApp(app);
-    await rm(workspacePath, { recursive: true, force: true });
+    await removeWorkspace(workspacePath);
   });
 
   it('accounts for the workspace, with a real size rather than a guess', async () => {
@@ -185,7 +185,11 @@ describe('what Datera has stored', () => {
   it('shows every location in Settings, with its size', async () => {
     await page.click('[data-nav="settings"]');
     await page.click('[data-settab="privacy"]');
-    await page.waitForSelector('[data-storage-panel]', { timeout: 30_000 });
+
+    // The rows, not the section. The panel renders immediately and fills once the sizes
+    // have been walked — so waiting for the container and asserting on a row is a race
+    // that a fast machine always wins and a loaded CI runner does not.
+    await page.waitForSelector('[data-storage-item="workspace"]', { timeout: 60_000 });
 
     for (const id of ['workspace', 'models', 'extensions', 'caches']) {
       expect(await page.isVisible(`[data-storage-item="${id}"]`)).toBe(true);
