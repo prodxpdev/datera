@@ -138,6 +138,11 @@ jobs:
             -s -k "$keychain_password" "$keychain" > /dev/null
 
           security list-keychain -d user -s "$keychain" login.keychain-db
+
+          # The disk image is signed later, by hash rather than by name — a name with
+          # parentheses and spaces in it is a quoting accident waiting to happen.
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk 'NR==1{print $2}')
+          echo "DATERA_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
           # Names the identity without revealing it: enough to tell "imported nothing" from
           # "imported something that cannot sign".
           security find-identity -v -p codesigning "$keychain" | tail -2
@@ -185,6 +190,15 @@ jobs:
           fi
 
           for dmg in "${images[@]}"; do
+            # Sign first, then notarize, then staple — Apple's order, and all three are
+            # required. A notarized, stapled but *unsigned* disk image still fails
+            # Gatekeeper's assessment with "no usable signature", which is what the first
+            # attempt at this shipped: notarization succeeded and the check still refused it.
+            if [ -n "${DATERA_SIGNING_IDENTITY:-}" ]; then
+              echo "Signing $dmg"
+              codesign --force --timestamp --sign "$DATERA_SIGNING_IDENTITY" "$dmg"
+            fi
+
             echo "Notarizing $dmg"
             # Fast, because the contents are already notarized: Apple recognises the app
             # inside and this is a second ticket for the container.
