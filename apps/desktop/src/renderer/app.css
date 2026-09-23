@@ -62,6 +62,10 @@
 .btn.p { background: var(--indigo); border-color: var(--indigo); color: #fff; }
 .btn.p:hover { background: #4230c9; }
 .btn:disabled { opacity: .5; cursor: default; }
+/* The affirmative action in a group. One per surface, or it stops meaning anything. */
+.primary { background: var(--indigo); border: 1px solid var(--indigo); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.primary:hover { filter: brightness(1.08); }
+.primary:disabled { opacity: .5; cursor: default; filter: none; }
 
 /* detail */
 .dsbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; min-width: 0; }
@@ -169,7 +173,9 @@
 .drawer.show { transform: none; }
 .dh { display: flex; align-items: flex-start; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
 .dh .t { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
-.dh .x { margin-left: auto; background: none; border: 0; font-size: 20px; color: var(--ink3); line-height: 1; }
+button.x { background: none; border: 0; font-size: 20px; color: var(--ink3); line-height: 1; padding: 0 4px; cursor: pointer; }
+button.x:hover { color: var(--ink); }
+.dh .x { margin-left: auto; }
 .db { padding: 14px 18px 30px; overflow: auto; min-width: 0; }
 
 .tracetop { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; font-family: var(--mono); font-size: 10.5px; color: var(--ink3); padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
@@ -266,6 +272,18 @@
 
 /* --------------------------------------------------------------- serve */
 .serve { min-width: 0; }
+/* Storage, in Settings → Privacy. The sizes are the point of the table, so they get their
+   own column and a monospace figure that lines up down the page. */
+.storagetable { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0 14px; }
+.storagetable td { border-top: 1px solid var(--line); padding: 10px 8px; vertical-align: top; }
+.storagetable .sname { font-weight: 600; font-size: 13px; }
+.storagetable .sname .tierdesc { font-weight: 400; margin: 3px 0 0; }
+.storagetable .ssize { width: 92px; font-family: var(--mono); font-size: 12px; text-align: right; color: var(--ink2); white-space: nowrap; }
+.storagetable .sact { width: 190px; text-align: right; white-space: nowrap; }
+.storagetable .sact button + button { margin-left: 8px; }
+/* Destructive actions look destructive. Nothing else in the app is this colour. */
+button.danger { border: 1px solid var(--red); background: var(--red-bg); color: var(--red); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+button.danger:disabled { opacity: 0.5; cursor: default; }
 /* Asking the log sits with the filters, not in a separate pane: it is another way to
    narrow the same list, and §8a is explicit that the log must not grow its own UI. */
 .logask { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
